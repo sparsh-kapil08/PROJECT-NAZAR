@@ -1,0 +1,7 @@
+{
+  "name": "Copy of DTU Smart Campus Monitor",
+  "description": "AI-powered infrastructure monitoring system for campus maintenance, safety, and cleanliness.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

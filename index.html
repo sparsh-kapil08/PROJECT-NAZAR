@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DTU Smart Campus Monitor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+      
+      :root {
+        --dtu-red: #990000;
+        --dtu-red-light: #ffebec;
+      }
+
+      body {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+        background-color: #fcfcfd;
+        -webkit-tap-highlight-color: transparent;
+        color: #1a1a1a;
+      }
+
+      .active-nav {
+        background-color: var(--dtu-red) !important;
+        color: white !important;
+        box-shadow: 0 10px 15px -3px rgba(153, 0, 0, 0.2);
+        transform: translateY(-1px);
+      }
+
+      .animate-fade-in {
+        animation: fadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(15px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      .scanner-line {
+        height: 2px;
+        background: linear-gradient(90deg, transparent, var(--dtu-red), transparent);
+        box-shadow: 0 0 15px var(--dtu-red);
+        animation: scan 2s linear infinite;
+        position: absolute;
+        width: 100%;
+        z-index: 10;
+      }
+
+      @keyframes scan {
+        0% { top: 0; }
+        100% { top: 100%; }
+      }
+
+      /* Custom Scrollbar */
+      ::-webkit-scrollbar { width: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
+      ::-webkit-scrollbar-thumb:hover { background: #cbd5e1; }
+
+      .glass-card {
+        background: rgba(255, 255, 255, 0.8);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+      }
+    </style>
+    <script type="importmap">
+    {
+      "imports": {
+        "@google/genai": "https://esm.sh/@google/genai@^1.39.0"
+      }
+    }
+    </script>
+  </head>
+  <body class="min-h-screen flex flex-col">
+    <header class="bg-white/80 backdrop-blur-md border-b border-gray-100 sticky top-0 z-[60]">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+        <div class="flex items-center space-x-4">
+          <div class="w-11 h-11 rounded-xl flex items-center justify-center text-white font-black text-2xl bg-[#990000] shadow-lg shadow-red-900/20">
+            D
+          </div>
+          <div>
+            <h1 class="text-xl font-extrabold text-gray-900 tracking-tight leading-none mb-1">DTU Smart Campus</h1>
+            <p class="text-[10px] text-gray-400 font-bold tracking-widest uppercase">Infrastructure Intelligence</p>
+          </div>
+        </div>
+        <div class="flex items-center space-x-3">
+          <div class="hidden md:flex flex-col items-end mr-4">
+            <span class="text-[10px] font-black text-green-600 uppercase tracking-widest flex items-center">
+              <span class="w-1.5 h-1.5 bg-green-500 rounded-full mr-1.5 animate-pulse"></span>
+              Core Synced
+            </span>
+            <span class="text-[9px] text-gray-400 font-bold uppercase">v2.4.0 Engine</span>
+          </div>
+          <button onclick="window.setView('ADMIN')" class="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center text-gray-400 hover:text-[#990000] hover:bg-red-50 transition-all duration-300 group" title="Admin Control Room">
+            <i class="fa-solid fa-sliders group-hover:rotate-90 transition-transform duration-500"></i>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main id="app-root" class="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 w-full pb-28 md:pb-12">
+      <!-- Content injected by index.js -->
+    </main>
+    
+    <nav class="md:hidden fixed bottom-6 left-6 right-6 h-18 bg-white/90 backdrop-blur-xl border border-gray-100 flex justify-around p-2 rounded-2xl shadow-2xl z-50">
+      <button onclick="window.setView('DASHBOARD')" id="nav-DASHBOARD" class="flex-1 flex flex-col items-center justify-center rounded-xl text-gray-400 transition-all">
+        <i class="fa-solid fa-chart-pie text-lg"></i>
+        <span class="text-[9px] font-black uppercase mt-1">Overview</span>
+      </button>
+      <button onclick="window.setView('LIVE')" id="nav-LIVE" class="flex-1 flex flex-col items-center justify-center rounded-xl text-gray-400 transition-all">
+        <i class="fa-solid fa-expand text-lg"></i>
+        <span class="text-[9px] font-black uppercase mt-1">Monitor</span>
+      </button>
+      <button onclick="window.setView('UPLOAD')" id="nav-UPLOAD" class="flex-1 flex flex-col items-center justify-center rounded-xl text-gray-400 transition-all">
+        <i class="fa-solid fa-cloud-arrow-up text-lg"></i>
+        <span class="text-[9px] font-black uppercase mt-1">Dispatch</span>
+      </button>
+    </nav>
+
+    <script type="module" src="index.js"></script>
+  </body>
+</html>
