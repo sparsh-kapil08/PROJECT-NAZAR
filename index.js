@@ -1,6 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
-// --- Configuration & Constants ---
 const CAMPUS_NAME = "DTU";
 const PRIMARY_COLOR = "#990000";
 
@@ -34,7 +33,6 @@ CRITICAL INSTRUCTIONS ON SCORING:
 
 Respond ONLY with valid JSON. Focus on campus infrastructure.`;
 
-// --- Application State ---
 let state = {
   currentView: 'DASHBOARD', 
   reports: [],
@@ -43,40 +41,90 @@ let state = {
   isAnalyzing: false
 };
 
-// --- API Services ---
+
 async function analyzeImage(base64Data) {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  if(!ai){
-    console.log("API KEY ERROR");
+  const loc={};
+  try{
+    try{
+      const loc=await location();
+    }
+    catch(er){
+      console.log("location not found");
+      const loc={lat:0,long:0};
+    }
+    console.log("PRIMARY MODEL");
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    if(!ai){
+      console.log("API KEY ERROR");
   }
-  const response = await ai.models.generateContent({
-    model: "gemini-3-flash-preview",
-    contents: {
-      parts: [
-        { text: ANALYSIS_PROMPT },
-        { inlineData: { mimeType: "image/jpeg", data: base64Data.split(",")[1] || base64Data } }
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: {
+        parts: [
+          { text: ANALYSIS_PROMPT },
+          {inlineData: { mimeType: "image/jpeg", data: base64Data.split(",")[1] || base64Data } }
       ]
     },
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: REPORT_SCHEMA,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: REPORT_SCHEMA,
     }
   });
-  const jsonStr = response.text?.trim();
-  if (!jsonStr) throw new Error("Empty response");
+    const jsonStr = response.text?.trim();
+    if (!jsonStr) throw new Error("Empty response");
   
-  const parsed = JSON.parse(jsonStr);
+    const parsed = JSON.parse(jsonStr);
   
-  if (parsed.confidenceLevel <= 1 && parsed.confidenceLevel > 0) {
-    parsed.confidenceLevel = Math.round(parsed.confidenceLevel * 100);
-  } else {
-    parsed.confidenceLevel = Math.round(parsed.confidenceLevel || 0);
+    if (parsed.confidenceLevel <= 1 && parsed.confidenceLevel > 0) {
+      parsed.confidenceLevel = Math.round(parsed.confidenceLevel * 100);
+    } else {
+      parsed.confidenceLevel = Math.round(parsed.confidenceLevel || 0);
   }
   
-  return parsed;
+    return {...parsed,lat:loc.lat,long:loc.long };
+  }
+  catch(err){
+    console.log("SECONDARY MODEL");
+    try{
+      const loc=await location();
+    }
+    catch(er){
+      console.log("location not found");
+      const loc={lat:0,long:0};
+    }
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    if(!ai){
+      console.log("API KEY ERROR");
+  }
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: {
+        parts: [
+          { text: ANALYSIS_PROMPT },
+          { inlineData: { mimeType: "image/jpeg", data: base64Data.split(",")[1] || base64Data } }
+      ]
+    },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: REPORT_SCHEMA,
+    }
+  });
+    const jsonStr = response.text?.trim();
+    if (!jsonStr) throw new Error("Empty response");
+  
+    const parsed = JSON.parse(jsonStr);
+  
+    if (parsed.confidenceLevel <= 1 && parsed.confidenceLevel > 0) {
+      parsed.confidenceLevel = Math.round(parsed.confidenceLevel * 100);
+  } else {
+      parsed.confidenceLevel = Math.round(parsed.confidenceLevel || 0);
+  }
+  
+    return {...parsed,lat:loc.lat,long:loc.long };
+  }
 }
 
-// --- UI Components ---
+
 function getSeverityStyles(level) {
   switch(level) {
     case 'High': return { border: 'border-red-600', text: 'text-red-700', bg: 'bg-red-50', badge: 'bg-red-600 text-white', icon: 'fa-triangle-exclamation' };
@@ -164,13 +212,11 @@ function renderReportCard(report, isDispatched = false) {
   `;
 }
 
-// --- View Rendering ---
+
 async function updateUI() {
-  // 1. Handle Navigation State (Mobile & Desktop)
   const activeViews = ['DASHBOARD', 'LIVE', 'UPLOAD'];
-  
   activeViews.forEach(v => {
-    // Mobile Nav
+
     const el = document.getElementById(`nav-${v}`);
     if (el) {
       if (state.currentView === v) el.classList.add('active-nav');
@@ -189,15 +235,12 @@ async function updateUI() {
     }
   });
 
-  // 2. Toggle View Containers
   document.querySelectorAll('.view-section').forEach(el => el.classList.add('hidden'));
   
-  // 3. Show Desktop Nav (hide only on Admin)
   const desktopNav = document.getElementById('desktop-nav');
   if (state.currentView === 'ADMIN') desktopNav.classList.add('hidden');
   else desktopNav.classList.remove('hidden');
 
-  // 4. Update Specific View Data
   if (state.currentView === 'DASHBOARD') {
     document.getElementById('view-dashboard').classList.remove('hidden');
     updateDashboardData();
@@ -217,20 +260,16 @@ function updateDashboardData() {
   const activeCount = state.reports.length;
   const highPriority = state.reports.filter(r => r.severityLevel === 'High').length;
   
-  // Update Counters
   document.getElementById('dash-queue-count').textContent = activeCount;
   const highCountEl = document.getElementById('dash-high-count');
   highCountEl.textContent = highPriority;
   highCountEl.className = `text-5xl font-black ${highPriority > 0 ? 'text-red-600' : 'text-gray-900'}`;
   
-  // Update Bar
   const percentage = activeCount > 0 ? (highPriority/activeCount)*100 : 0;
   document.getElementById('dash-severity-bar').style.width = `${percentage}%`;
   
-  // Update Badge
   document.getElementById('dash-total-badge').textContent = `${activeCount} Reports`;
   
-  // Update List
   const container = document.getElementById('dash-reports-container');
   if (state.reports.length === 0) {
     container.innerHTML = `
@@ -308,8 +347,6 @@ window.deleteDispatchedTicket = (id) => {
   }
 };
 
-// Initialize
-// 1. Attach Static Event Listeners
 document.getElementById('capture-btn').addEventListener('click', async () => {
   if (state.isAnalyzing) return;
   state.isAnalyzing = true;
@@ -325,7 +362,7 @@ document.getElementById('capture-btn').addEventListener('click', async () => {
   
   try {
     const result = await analyzeImage(dataUrl);
-    const report = { ...result, id: Date.now(), imageUrl: dataUrl };
+    const report = { ...result, id: Date.now(), imageUrl: dataUrl, latitude: result.lat, longitude: result.long };
     state.reports.unshift(report);
     document.getElementById('live-result-container').innerHTML = `
       <div class="mt-8">
@@ -371,6 +408,19 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
   };
   reader.readAsDataURL(file);
 });
+
+function location() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(new Error("Geolocation is not supported by this browser."));
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => resolve({ lat: position.coords.latitude, long: position.coords.longitude }),
+      (error) => reject(error)
+    );
+  });
+}
 
 // 2. Start App
 updateUI();
