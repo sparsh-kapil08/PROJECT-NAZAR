@@ -1,8 +1,27 @@
 import { GoogleGenAI, Type } from "@google/genai";
+import supabase from "./supabase.js";
+import {useEffect, useState} from "react";
+
+const[fetchError, setFetchError] = useState(null);
+const[tickets, setTickets] = useState(null);
+useEffect(()=>{
+  const fetchtickets= async()=>{
+    const {data,error}= await supabase.from('tickets').select();
+    if(error){
+      setFetchError("Could not fetch data");
+      setTickets(null);
+    }
+    if(data){
+      setTickets(data);
+      setFetchError(null);
+    }
+  }
+  fetchtickets();
+},[]);
+
 
 const CAMPUS_NAME = "DTU";
 const PRIMARY_COLOR = "#990000";
-
 const REPORT_SCHEMA = {
   type: Type.OBJECT,
   properties: {
