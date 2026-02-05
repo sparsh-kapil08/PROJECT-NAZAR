@@ -1,13 +1,6 @@
-import mediapipe as mp
 import sys
+# Add the project root to the path
+sys.path.append('/workspaces/PROJECT-NAZAR')
 
-print("--- Diagnostic Report ---")
-print(f"Python Version: {sys.version}")
-print(f"MediaPipe Location: {mp.__file__}")
-print(f"Available in mp: {dir(mp)}")
-
-try:
-    pose = mp.solutions.pose.Pose()
-    print("✅ Success: MediaPipe Pose initialized!")
-except AttributeError as e:
-    print(f"❌ Error: {e}")
+# Now your import should work
+from ml_engine.api import ...

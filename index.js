@@ -4,6 +4,7 @@ import supabase from "./supabase.js";
 
 const CAMPUS_NAME = "DTU";
 const PRIMARY_COLOR = "#990000";
+const ML_API_URL = "http://127.0.0.1:8000/ML_analyze"; // Update this URL if running in Codespaces/Cloud
 const REPORT_SCHEMA = {
   type: Type.OBJECT,
   properties: {
@@ -53,7 +54,7 @@ async function analyzeImage(base64Data) {
     formData.append("file", blob, "image.jpg");
 
     // Call Python API (assuming default FastAPI port 8000)
-    const mlResponse = await fetch("http://127.0.0.1:8000/ML_analyze", {
+    const mlResponse = await fetch(ML_API_URL, {
       method: "POST",
       body: formData
     });
@@ -385,8 +386,18 @@ window.setView = (view) => {
   updateUI();
 };
 
-window.discardTicket = (id) => {
+window.discardTicket = async (id) => {
   if(confirm("Permanently discard this diagnostic session?")) {
+    const { error } = await supabase
+      .from('tickets')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      alert(`Failed to delete ticket: ${error.message}`);
+      return;
+    }
+
     state.reports = state.reports.filter(r => r.id !== id);
     updateUI();
   }
@@ -414,14 +425,14 @@ window.dispatchTicket = async (id) => {
     return;
   }
 
-  // 2. Update is_dispatched in the original tickets table
-  const { error: updateError } = await supabase
+  // 2. Delete from the original tickets table
+  const { error: deleteError } = await supabase
     .from('tickets')
-    .update({ is_dispatched: true })
+    .delete()
     .eq('id', id);
 
-  if (updateError) {
-    alert(`Failed to update original ticket status: ${updateError.message}. Rolling back.`);
+  if (deleteError) {
+    alert(`Failed to delete original ticket: ${deleteError.message}. Rolling back.`);
     // Rollback the insertion
     await supabase.from('dispatchtickets').delete().eq('id', newDispatchedTicket.id);
     return;
