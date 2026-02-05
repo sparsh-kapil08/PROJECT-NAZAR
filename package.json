@@ -13,7 +13,8 @@
     "@supabase/supabase-js": "^2.94.1",
     "fastapi": "^0.0.8",
     "node": "^25.6.0",
-    "parcel": "^2.16.4"
+    "parcel": "^2.16.4",
+    "ultralytics": "^1.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

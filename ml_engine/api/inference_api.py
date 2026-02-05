@@ -1,53 +1,43 @@
 from fastapi import FastAPI, UploadFile, File
 import cv2
 import numpy as np
-from core.decision_engine import process_frame
-from fastapi.middleware.cors import CORSMiddleware
 import traceback
+from core.decision_engine import process_frame
 
 from modules.water_leak.leak_pipeline import process_water_frame
+from modules.waste_monitor.waste_pipeline import process_waste_frame
 app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allows all origins
-    allow_credentials=True,
-    allow_methods=["*"],  # Allows all methods
-    allow_headers=["*"],  # Allows all headers
-)
-
-def read_image(file):
-    data = np.frombuffer(file, np.uint8)
-    return cv2.imdecode(data, cv2.IMREAD_COLOR)
-
-
 @app.post("/ML_analyze")
-async def detect_water(file: UploadFile = File(...)):
-
+async def analyze_image(file: UploadFile = File(...)):
+    """
+    Single endpoint to analyze an image for multiple potential issues.
+    It runs a pipeline of detectors: water, waste, and then general infrastructure.
+    """
     try:
-        file_data = await file.read()
-        frame = read_image(file_data)
-
+        contents = await file.read()
+        frame = cv2.imdecode(np.frombuffer(contents, np.uint8), cv2.IMREAD_COLOR)
         if frame is None:
             return {"status": "ERROR", "message": "Could not decode image"}
 
-        result, _ = process_water_frame(frame)
+        # Pipeline Step 1: Water Leak Detection
+        water_result, _ = process_water_frame(frame)
+        if water_result:
+            return water_result
 
-        if result:
-            return {
-                "status": "ISSUE_CONFIRMED",
-                "data": result
-            }
-        else:
-        
-            async def lights_off(data):
-                img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
-                if img is None:
-                    return {"status": "ERROR", "message": "Could not decode image in lights_off"}
-                result = process_frame(img)
+        # Pipeline Step 2: Waste Detection
+        waste_result, _ = process_waste_frame(frame)
+        if waste_result:
+            return waste_result
 
-                return result or {"status": "normal"}
-            return await lights_off(file_data)
+        # Pipeline Step 3: General Infrastructure Analysis (fallback)
+        general_result = process_frame(frame)
+        if general_result:
+            return general_result
+
+        # If no specific issues are found by any model, return a normal status
+        return {"status": "NORMAL"}
+
     except Exception as e:
         traceback.print_exc()
         return {"status": "SERVER_ERROR", "error": str(e)}

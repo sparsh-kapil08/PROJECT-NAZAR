@@ -4,7 +4,7 @@ import supabase from "./supabase.js";
 
 const CAMPUS_NAME = "DTU";
 const PRIMARY_COLOR = "#990000";
-const ML_API_URL = "http://127.0.0.1:8000/ML_analyze"; // Update this URL if running in Codespaces/Cloud
+const ML_API_URL = "/ML_analyze"; // Update this URL if running in Codespaces/Cloud
 const REPORT_SCHEMA = {
   type: Type.OBJECT,
   properties: {

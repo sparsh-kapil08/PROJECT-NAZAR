@@ -10,5 +10,14 @@ export default defineConfig(({ mode }) => {
       'process.env.SUPABASE': JSON.stringify(env.SUPABASE),
       'process.env.DB_API_KEY': JSON.stringify(env.DB_API_KEY),
     },
+    server: {
+      proxy: {
+        '/ML_analyze': {
+          target: 'http://127.0.0.1:8000',
+          changeOrigin: true,
+          secure: false,
+        },
+      },
+    },
   };
 });
