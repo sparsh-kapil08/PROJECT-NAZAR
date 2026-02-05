@@ -1,6 +1,20 @@
-EMPTY_TIME_THRESHOLD = 120   # we have takenb the unit in seconds
+# ---------------- ENERGY WASTE ----------------
+
+EMPTY_TIME_THRESHOLD = 120
 BRIGHTNESS_THRESHOLD = 180
 FAN_MOTION_THRESHOLD = 25
 FRAME_HISTORY = 30
 
-CEILING_ROI = (0.0, 0.0, 1.0, 0.4)   # here we taking top 40% of frame
+CEILING_ROI = (0.0, 0.0, 1.0, 0.4)
+
+
+# ---------------- WATER INTELLIGENCE ----------------
+
+MIN_PUDDLE_CONTOUR_AREA = 100
+
+FLOW_CONFIRM_FRAMES = 3
+PERSISTENCE_BUFFER = 30
+
+SEVERITY_SMALL = 400
+SEVERITY_MEDIUM = 800
+SEVERITY_HIGH = 1200

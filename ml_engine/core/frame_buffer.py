@@ -10,3 +10,5 @@ class EmptyRoomTracker:
 
     def is_empty_long_enough(self, threshold):
         return time.time() - self.last_person_time > threshold
+
+
