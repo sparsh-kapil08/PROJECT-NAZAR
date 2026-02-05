@@ -42,6 +42,34 @@ let state = {
 
 
 async function analyzeImage(base64Data) {
+  let mlContext = "";
+  
+  // 1. Attempt to consult the local ML Engine first
+  try {
+    // Convert Data URL to Blob for upload
+    const fetchRes = await fetch(base64Data);
+    const blob = await fetchRes.blob();
+    const formData = new FormData();
+    formData.append("file", blob, "image.jpg");
+
+    // Call Python API (assuming default FastAPI port 8000)
+    const mlResponse = await fetch("http://127.0.0.1:8000/ML_analyze", {
+      method: "POST",
+      body: formData
+    });
+
+    if (mlResponse.ok) {
+      const mlResult = await mlResponse.json();
+      // If the ML model found something, format it for Gemini
+      if (mlResult) {
+        mlContext = `\n\n[ADDITIONAL SENSOR DATA FROM COMPUTER VISION]:\n${JSON.stringify(mlResult)}\n\nUse this sensor data to confirm your visual diagnosis.`;
+        console.log("ML Engine Context:", mlResult);
+      }
+    }
+  } catch (e) {
+    console.warn("ML Engine unavailable, proceeding with visual analysis only.", e);
+  }
+
   try {
     console.log("PRIMARY MODEL");
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -52,7 +80,7 @@ async function analyzeImage(base64Data) {
       model: "gemini-3-flash-preview",
       contents: {
         parts: [
-          { text: ANALYSIS_PROMPT },
+          { text: ANALYSIS_PROMPT + mlContext },
           {inlineData: { mimeType: "image/jpeg", data: base64Data.split(",")[1] || base64Data } }
         ]
       },
@@ -82,7 +110,7 @@ async function analyzeImage(base64Data) {
       model: "gemini-2.5-flash",
       contents: {
         parts: [
-          { text: ANALYSIS_PROMPT },
+          { text: ANALYSIS_PROMPT + mlContext },
           { inlineData: { mimeType: "image/jpeg", data: base64Data.split(",")[1] || base64Data } }
         ]
       },
