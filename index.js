@@ -1,23 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import supabase from "./supabase.js";
-import {useEffect, useState} from "react";
-
-const[fetchError, setFetchError] = useState(null);
-const[tickets, setTickets] = useState(null);
-useEffect(()=>{
-  const fetchtickets= async()=>{
-    const {data,error}= await supabase.from('tickets').select();
-    if(error){
-      setFetchError("Could not fetch data");
-      setTickets(null);
-    }
-    if(data){
-      setTickets(data);
-      setFetchError(null);
-    }
-  }
-  fetchtickets();
-},[]);
 
 
 const CAMPUS_NAME = "DTU";
@@ -231,6 +213,31 @@ function renderReportCard(report, isDispatched = false) {
   `;
 }
 
+async function fetchAndSetTickets() {
+  const { data, error } = await supabase.from('tickets').select();
+
+  if (error) {
+    console.error("Could not fetch data from 'tickets' table:", error.message);
+    return;
+  }
+
+  if (data) {
+    state.reports = data.map(ticket => ({
+      id: ticket.id,
+      detectedIssue: ticket.issue,
+      category: ticket.category || 'Uncategorized',
+      possibleRisks: ticket.Risks || 'Not specified',
+      imageUrl: ticket.Image,
+      severityLevel: 'Medium', // Default value
+      reasonForSeverity: 'N/A', // Default value
+      suggestedDepartment: 'Maintenance', // Default value
+      confidenceLevel: ticket.confidence || 0,
+    })).sort((a, b) => b.id - a.id); 
+    
+    updateUI();
+  }
+}
+
 
 async function updateUI() {
   const activeViews = ['DASHBOARD', 'LIVE', 'UPLOAD'];
@@ -442,4 +449,5 @@ function location() {
 }
 
 // 2. Start App
+fetchAndSetTickets();
 updateUI();

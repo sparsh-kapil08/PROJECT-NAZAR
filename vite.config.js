@@ -7,6 +7,8 @@ export default defineConfig(({ mode }) => {
   return {
     define: {
       'process.env.API_KEY': JSON.stringify(env.API_KEY),
+      'process.env.SUPABASE': JSON.stringify(env.SUPABASE),
+      'process.env.DB_API_KEY': JSON.stringify(env.DB_API_KEY),
     },
   };
 });
