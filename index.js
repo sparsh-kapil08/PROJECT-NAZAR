@@ -10,12 +10,10 @@ const REPORT_SCHEMA = {
     detectedIssue: { type: Type.STRING },
     category: { type: Type.STRING },
     severityLevel: { type: Type.STRING },
-    reasonForSeverity: { type: Type.STRING },
     possibleRisks: { type: Type.STRING },
-    suggestedDepartment: { type: Type.STRING },
     confidenceLevel: { type: Type.NUMBER, description: "A value from 0 to 100 representing certainty." },
   },
-  required: ["detectedIssue", "category", "severityLevel", "reasonForSeverity", "possibleRisks", "suggestedDepartment", "confidenceLevel"],
+  required: ["detectedIssue", "category", "severityLevel", "possibleRisks", "confidenceLevel"],
 };
 
 const ANALYSIS_PROMPT = `
@@ -44,35 +42,27 @@ let state = {
 
 
 async function analyzeImage(base64Data) {
-  const loc={};
-  try{
-    try{
-      const loc=await location();
-    }
-    catch(er){
-      console.log("location not found");
-      const loc={lat:0,long:0};
-    }
+  try {
     console.log("PRIMARY MODEL");
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    if(!ai){
+    if (!ai) {
       console.log("API KEY ERROR");
-  }
+    }
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
       contents: {
         parts: [
           { text: ANALYSIS_PROMPT },
           {inlineData: { mimeType: "image/jpeg", data: base64Data.split(",")[1] || base64Data } }
-      ]
-    },
+        ]
+      },
       config: {
         responseMimeType: "application/json",
         responseSchema: REPORT_SCHEMA,
-    }
-  });
+      }
+    });
     const jsonStr = response.text?.trim();
-    if (!jsonStr) throw new Error("Empty response");
+    if (!jsonStr) throw new Error("Empty response from primary model");
   
     const parsed = JSON.parse(jsonStr);
   
@@ -80,48 +70,38 @@ async function analyzeImage(base64Data) {
       parsed.confidenceLevel = Math.round(parsed.confidenceLevel * 100);
     } else {
       parsed.confidenceLevel = Math.round(parsed.confidenceLevel || 0);
-  }
-  
-    return {...parsed,lat:loc.lat,long:loc.long };
-  }
-  catch(err){
+    }
+    return parsed;
+  } catch(err) {
     console.log("SECONDARY MODEL");
-    try{
-      const loc=await location();
-    }
-    catch(er){
-      console.log("location not found");
-      const loc={lat:0,long:0};
-    }
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    if(!ai){
+    if (!ai) {
       console.log("API KEY ERROR");
-  }
+    }
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents: {
         parts: [
           { text: ANALYSIS_PROMPT },
           { inlineData: { mimeType: "image/jpeg", data: base64Data.split(",")[1] || base64Data } }
-      ]
-    },
+        ]
+      },
       config: {
         responseMimeType: "application/json",
         responseSchema: REPORT_SCHEMA,
-    }
-  });
+      }
+    });
     const jsonStr = response.text?.trim();
-    if (!jsonStr) throw new Error("Empty response");
+    if (!jsonStr) throw new Error("Empty response from secondary model");
   
     const parsed = JSON.parse(jsonStr);
   
     if (parsed.confidenceLevel <= 1 && parsed.confidenceLevel > 0) {
       parsed.confidenceLevel = Math.round(parsed.confidenceLevel * 100);
-  } else {
+    } else {
       parsed.confidenceLevel = Math.round(parsed.confidenceLevel || 0);
-  }
-  
-    return {...parsed,lat:loc.lat,long:loc.long };
+    }
+    return parsed;
   }
 }
 
@@ -214,7 +194,11 @@ function renderReportCard(report, isDispatched = false) {
 }
 
 async function fetchAndSetTickets() {
-  const { data, error } = await supabase.from('tickets').select();
+  const { data, error } = await supabase
+    .from('tickets')
+    .select()
+    .or('is_dispatched.is.null,is_dispatched.eq.false')
+    .order('id', { ascending: false });
 
   if (error) {
     console.error("Could not fetch data from 'tickets' table:", error.message);
@@ -228,13 +212,36 @@ async function fetchAndSetTickets() {
       category: ticket.category || 'Uncategorized',
       possibleRisks: ticket.Risks || 'Not specified',
       imageUrl: ticket.Image,
-      severityLevel: 'Medium', // Default value
-      reasonForSeverity: 'N/A', // Default value
-      suggestedDepartment: 'Maintenance', // Default value
-      confidenceLevel: ticket.confidence || 0,
+      // Provide defaults for fields not in the database
+      severityLevel: 'Medium',
+      confidenceLevel: 0,
+      reasonForSeverity: 'N/A',
+      suggestedDepartment: 'Maintenance',
     })).sort((a, b) => b.id - a.id); 
     
     updateUI();
+  }
+}
+
+async function fetchAndSetDispatchedTickets() {
+  const { data, error } = await supabase.from('dispatchtickets').select().order('id', { ascending: false });
+
+  if (error) {
+    console.error("Could not fetch data from 'dispatchtickets' table:", error.message);
+    state.dispatchedReports = [];
+  } else if (data) {
+    state.dispatchedReports = data.map(ticket => ({
+      id: ticket.id,
+      detectedIssue: ticket.issue,
+      category: ticket.category || 'Uncategorized',
+      possibleRisks: ticket.Risks || 'Not specified',
+      imageUrl: ticket.Image,
+      // Provide defaults for the card to render
+      severityLevel: 'Dispatched',
+      confidenceLevel: 100,
+      reasonForSeverity: 'This ticket has been dispatched and is archived.',
+      suggestedDepartment: 'Maintenance',
+    }));
   }
 }
 
@@ -278,7 +285,7 @@ async function updateUI() {
     // Upload view is static, no data update needed on switch
   } else if (state.currentView === 'ADMIN') {
     document.getElementById('view-admin').classList.remove('hidden');
-    updateAdminData();
+    await updateAdminData();
   }
 }
 
@@ -311,7 +318,9 @@ function updateDashboardData() {
   }
 }
 
-function updateAdminData() {
+async function updateAdminData() {
+  await fetchAndSetDispatchedTickets();
+
   document.getElementById('admin-dispatched-count').textContent = state.dispatchedReports.length;
   
   const container = document.getElementById('admin-reports-container');
@@ -355,42 +364,109 @@ window.discardTicket = (id) => {
   }
 };
 
-window.dispatchTicket = (id) => {
-  const index = state.reports.findIndex(r => r.id === id);
-  if (index !== -1) {
-    const ticket = { ...state.reports[index], dispatchedAt: Date.now() };
-    state.dispatchedReports.unshift(ticket);
-    state.reports.splice(index, 1);
-    alert(`TRANSMITTED: Resource dispatched to ${ticket.suggestedDepartment}.`);
-    updateUI();
+window.dispatchTicket = async (id) => {
+  const reportToDispatch = state.reports.find(r => r.id === id);
+  if (!reportToDispatch) {
+    console.error("Could not find report to dispatch in local state.");
+    return;
   }
+
+  // 1. Insert into dispatchtickets table
+  const { data: newDispatchedTicket, error: insertError } = await supabase
+    .from('dispatchtickets')
+    .insert({
+      issue: reportToDispatch.detectedIssue,
+      category: reportToDispatch.category,
+      Risks: reportToDispatch.possibleRisks,
+      Image: reportToDispatch.imageUrl,
+    }).select().single();
+
+  if (insertError) {
+    alert(`Failed to create record in dispatched tickets: ${insertError.message}`);
+    return;
+  }
+
+  // 2. Update is_dispatched in the original tickets table
+  const { error: updateError } = await supabase
+    .from('tickets')
+    .update({ is_dispatched: true })
+    .eq('id', id);
+
+  if (updateError) {
+    alert(`Failed to update original ticket status: ${updateError.message}. Rolling back.`);
+    // Rollback the insertion
+    await supabase.from('dispatchtickets').delete().eq('id', newDispatchedTicket.id);
+    return;
+  }
+
+  // 3. Update local state and UI
+  state.reports = state.reports.filter(r => r.id !== id);
+  alert(`TRANSMITTED: Resource dispatched to ${reportToDispatch.suggestedDepartment}.`);
+  updateUI();
 };
 
-window.deleteDispatchedTicket = (id) => {
+window.deleteDispatchedTicket = async (id) => {
   if(confirm("Purge this archived record?")) {
-    state.dispatchedReports = state.dispatchedReports.filter(r => r.id !== id);
-    updateAdminData();
+    const { error } = await supabase.from('dispatchtickets').delete().eq('id', id);
+    if (error) alert(`Failed to purge record: ${error.message}`);
+    updateUI();
   }
 };
 
 document.getElementById('capture-btn').addEventListener('click', async () => {
   if (state.isAnalyzing) return;
-  state.isAnalyzing = true;
   
   const video = document.getElementById('monitor-video');
+  const resultContainer = document.getElementById('live-result-container');
+  const statusContainer = document.getElementById('analysis-status');
+  const captureContainer = document.getElementById('capture-container');
+
+  // Redesigned loading state
+  state.isAnalyzing = true;
+  statusContainer.innerHTML = `<div class="text-center p-4"><i class="fa-solid fa-spinner-third fa-spin text-2xl text-[#990000]"></i><p class="text-xs font-bold mt-2 uppercase">Analyzing...</p></div>`;
+  statusContainer.classList.remove('hidden');
+  captureContainer.classList.add('hidden');
+  resultContainer.innerHTML = '';
+
   const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
   canvas.getContext('2d').drawImage(video, 0, 0);
   const dataUrl = canvas.toDataURL('image/jpeg');
   
-  document.getElementById('analysis-status').classList.remove('hidden');
-  document.getElementById('capture-container').classList.add('hidden');
-  
   try {
     const result = await analyzeImage(dataUrl);
-    const report = { ...result, id: Date.now(), imageUrl: dataUrl, latitude: result.lat, longitude: result.long };
+
+    const { data: newTicket, error } = await supabase
+      .from('tickets')
+      .insert({
+        issue: result.detectedIssue,
+        category: result.category,
+        Risks: result.possibleRisks,
+        Image: dataUrl,
+        is_dispatched: false,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(`Supabase Error: ${error.message}`);
+    }
+
+    const report = {
+      id: newTicket.id,
+      detectedIssue: newTicket.issue,
+      category: newTicket.category,
+      possibleRisks: newTicket.Risks,
+      imageUrl: newTicket.Image,
+      severityLevel: result.severityLevel,
+      confidenceLevel: result.confidenceLevel,
+      reasonForSeverity: 'AI-generated based on visual analysis.',
+      suggestedDepartment: 'Maintenance'
+    };
+    
     state.reports.unshift(report);
-    document.getElementById('live-result-container').innerHTML = `
+    resultContainer.innerHTML = `
       <div class="mt-8">
          <div class="flex items-center space-x-2 mb-6">
            <div class="h-px bg-gray-200 flex-1"></div>
@@ -400,53 +476,81 @@ document.getElementById('capture-btn').addEventListener('click', async () => {
          ${renderReportCard(report)}
       </div>
     `;
-  } catch (err) { 
-    alert("Vision analysis timed out. Check connection."); 
-    console.log(err);
+  } catch (err) {
+    console.error(err);
+    resultContainer.innerHTML = `<div class="text-center p-8 bg-red-50 text-red-700 rounded-2xl mt-8"><strong>Analysis Failed:</strong> ${err.message}</div>`;
   } finally {
     state.isAnalyzing = false;
-    document.getElementById('analysis-status').classList.add('hidden');
-    document.getElementById('capture-container').classList.remove('hidden');
+    statusContainer.classList.add('hidden');
+    captureContainer.classList.remove('hidden');
   }
 });
 
-document.getElementById('file-input').addEventListener('change', async (e) => {
+document.getElementById('file-input').addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
+
   const reader = new FileReader();
   reader.onload = async (event) => {
     const dataUrl = event.target.result;
-    document.getElementById('upload-status').classList.remove('hidden');
-    document.getElementById('upload-result-container').innerHTML = '';
+    const resultContainer = document.getElementById('upload-result-container');
+    const statusContainer = document.getElementById('upload-status');
+    const uploadArea = document.getElementById('upload-area');
+
+    statusContainer.innerHTML = `<div class="text-center p-4"><i class="fa-solid fa-spinner-third fa-spin text-2xl text-[#990000]"></i><p class="text-xs font-bold mt-2 uppercase">Analyzing...</p></div>`;
+    statusContainer.classList.remove('hidden');
+    resultContainer.innerHTML = '';
+    if(uploadArea) uploadArea.style.display = 'none';
+
     try {
       const result = await analyzeImage(dataUrl);
-      const report = { ...result, id: Date.now(), imageUrl: dataUrl };
+
+      const { data: newTicket, error } = await supabase
+        .from('tickets')
+        .insert({
+          issue: result.detectedIssue,
+          category: result.category,
+          Risks: result.possibleRisks,
+          Image: dataUrl,
+        is_dispatched: false,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        throw new Error(`Supabase Error: ${error.message}`);
+      }
+
+      const report = {
+        id: newTicket.id,
+        detectedIssue: newTicket.issue,
+        category: newTicket.category,
+        possibleRisks: newTicket.Risks,
+        imageUrl: newTicket.Image,
+        severityLevel: result.severityLevel,
+        confidenceLevel: result.confidenceLevel,
+        reasonForSeverity: 'AI-generated based on visual analysis.',
+        suggestedDepartment: 'Maintenance'
+      };
+
       state.reports.unshift(report);
-      document.getElementById('upload-result-container').innerHTML = `
+      resultContainer.innerHTML = `
         <div class="mt-8">
           <div class="h-px bg-gray-200 w-full mb-8"></div>
           ${renderReportCard(report)}
         </div>
       `;
-    } catch (err) { alert("Diagnostic failure. Image might be too large."); } finally {
-      document.getElementById('upload-status').classList.add('hidden');
+    } catch (err) {
+      console.error(err);
+      resultContainer.innerHTML = `<div class="text-center p-8 bg-red-50 text-red-700 rounded-2xl mt-8"><strong>Analysis Failed:</strong> ${err.message}</div>`;
+    } finally {
+      statusContainer.classList.add('hidden');
+      if(uploadArea) uploadArea.style.display = 'flex';
+      e.target.value = '';
     }
   };
   reader.readAsDataURL(file);
 });
-
-function location() {
-  return new Promise((resolve, reject) => {
-    if (!navigator.geolocation) {
-      reject(new Error("Geolocation is not supported by this browser."));
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (position) => resolve({ lat: position.coords.latitude, long: position.coords.longitude }),
-      (error) => reject(error)
-    );
-  });
-}
 
 // 2. Start App
 fetchAndSetTickets();
