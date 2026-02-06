@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form 
 import cv2
 import numpy as np
 from core.decision_engine import process_frame
@@ -6,6 +6,9 @@ from core.decision_engine import process_frame
 
 from modules.water_leak.leak_pipeline import process_water_frame, reset_state
 from modules.waste_monitor.waste_pipeline import process_waste_frame
+from modules.unauthorised_monitor.detector import detector
+
+
 app = FastAPI()
 
 
@@ -60,3 +63,21 @@ async def waste_detect(file: UploadFile = File(...)):
         "objects": int(result["objects"])
     }
 
+@app.post("/detect/unauthorized")
+async def detect_unauthorized(
+    image: UploadFile = File(...),
+    start_hour: int = Form(...),
+    end_hour: int = Form(...)
+    ):
+    if not (0 <= start_hour <= 23 and 0 <= end_hour <= 23):
+        return {"error": "Hours must be between 0 and 23"}
+
+    contents = await image.read()
+    np_img = np.frombuffer(contents, np.uint8)
+    frame = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
+
+    if frame is None:
+        return {"error": "Invalid image"}
+
+    result = detector.process_frame(frame, start_hour, end_hour)
+    return result
