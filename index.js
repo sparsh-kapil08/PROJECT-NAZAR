@@ -41,6 +41,39 @@ let state = {
   isAnalyzing: false
 };
 
+function getBrowserLocation() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve(null);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        resolve({ lat: latitude, long: longitude });
+      },
+      (err) => {
+        console.warn("Location retrieval failed", err);
+        resolve(null);
+      }
+    );
+  });
+}
+
+function haversineDistance(coords1, coords2) {
+  if (!coords1 || !coords2 || !coords1.lat || !coords1.long || !coords2.lat || !coords2.long) return Infinity;
+  const R = 6371; // Radius of the Earth in km
+  const dLat = (coords2.lat - coords1.lat) * Math.PI / 180;
+  const dLon = (coords2.long - coords1.long) * Math.PI / 180;
+  const lat1 = coords1.lat * Math.PI / 180;
+  const lat2 = coords2.lat * Math.PI / 180;
+
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c; // Distance in km
+}
+
 
 async function analyzeImage(base64Data) {
   let mlContext = "";
@@ -188,6 +221,13 @@ function renderReportCard(report, isDispatched = false) {
                  <p class="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-2">Safety Risks</p>
                  <p class="text-sm font-bold text-gray-800 truncate">${report.possibleRisks || 'Negligible'}</p>
               </div>
+              <div class="col-span-2">
+                 <p class="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-2">Geotag Location</p>
+                 <p class="text-sm font-bold text-gray-800 truncate flex items-center">
+                   <i class="fa-solid fa-location-dot mr-2 text-red-700/50"></i>
+                   ${report.location || 'Not Available'}
+                 </p>
+              </div>
             </div>
 
             <div class="${styles.bg} rounded-2xl p-5 mb-2 border border-white">
@@ -235,19 +275,66 @@ async function fetchAndSetTickets() {
   }
 
   if (data) {
-    state.reports = data.map(ticket => ({
+    let reports = data.map(ticket => ({
       id: ticket.id,
       detectedIssue: ticket.issue,
       category: ticket.category || 'Uncategorized',
       possibleRisks: ticket.Risks || 'Not specified',
       imageUrl: ticket.Image,
+      location: ticket.lat && ticket.long ? `${ticket.lat}, ${ticket.long}` : 'Not Available',
+      lat: ticket.lat,
+      long: ticket.long,
       // Provide defaults for fields not in the database
       severityLevel: 'Medium',
       confidenceLevel: 0,
       reasonForSeverity: 'N/A',
       suggestedDepartment: 'Maintenance',
     })).sort((a, b) => b.id - a.id); 
-    
+
+    // Auto-dispatch logic for clustered tickets
+    const ticketsWithLocation = reports.filter(t => t.lat && t.long);
+    const processedTicketIds = new Set();
+    const ticketsToDispatch = [];
+
+    if (ticketsWithLocation.length > 5) {
+      for (const ticket of ticketsWithLocation) {
+        if (processedTicketIds.has(ticket.id)) {
+          continue;
+        }
+
+        const nearbyGroup = ticketsWithLocation.filter(otherTicket => {
+          const distance = haversineDistance(
+            { lat: ticket.lat, long: ticket.long },
+            { lat: otherTicket.lat, long: otherTicket.long }
+          );
+          return distance < 0.05; // 50 meters radius
+        });
+
+        if (nearbyGroup.length > 5) {
+          nearbyGroup.forEach(t => {
+            if (!processedTicketIds.has(t.id)) {
+              ticketsToDispatch.push(t);
+              processedTicketIds.add(t.id);
+            }
+          });
+        }
+      }
+    }
+
+    if (ticketsToDispatch.length > 0) {
+      alert(`Found ${ticketsToDispatch.length} tickets in close proximity. Auto-dispatching now.`);
+      
+      // Set state.reports temporarily so dispatchTicket can find the tickets
+      state.reports = reports;
+
+      const dispatchPromises = ticketsToDispatch.map(t => window.dispatchTicket(t.id, false));
+      await Promise.all(dispatchPromises);
+
+      const dispatchedIds = new Set(ticketsToDispatch.map(t => t.id));
+      reports = reports.filter(r => !dispatchedIds.has(r.id));
+    }
+
+    state.reports = reports;
     updateUI();
   }
 }
@@ -265,6 +352,7 @@ async function fetchAndSetDispatchedTickets() {
       category: ticket.category || 'Uncategorized',
       possibleRisks: ticket.Risks || 'Not specified',
       imageUrl: ticket.Image,
+      location: ticket.lat && ticket.long ? `${ticket.lat}, ${ticket.long}` : 'Not Available',
       // Provide defaults for the card to render
       severityLevel: 'Dispatched',
       confidenceLevel: 100,
@@ -403,7 +491,7 @@ window.discardTicket = async (id) => {
   }
 };
 
-window.dispatchTicket = async (id) => {
+window.dispatchTicket = async (id, showAlertAndUpdateUI = true) => {
   const reportToDispatch = state.reports.find(r => r.id === id);
   if (!reportToDispatch) {
     console.error("Could not find report to dispatch in local state.");
@@ -418,10 +506,17 @@ window.dispatchTicket = async (id) => {
       category: reportToDispatch.category,
       Risks: reportToDispatch.possibleRisks,
       Image: reportToDispatch.imageUrl,
+      lat: reportToDispatch.lat,
+      long: reportToDispatch.long,
     }).select().single();
 
   if (insertError) {
-    alert(`Failed to create record in dispatched tickets: ${insertError.message}`);
+    const errorMessage = `Failed to create record in dispatched tickets: ${insertError.message}`;
+    if (showAlertAndUpdateUI) {
+      alert(errorMessage);
+    } else {
+      console.error(`${errorMessage} for ticket id ${id}`);
+    }
     return;
   }
 
@@ -432,16 +527,23 @@ window.dispatchTicket = async (id) => {
     .eq('id', id);
 
   if (deleteError) {
-    alert(`Failed to delete original ticket: ${deleteError.message}. Rolling back.`);
+    const errorMessage = `Failed to delete original ticket: ${deleteError.message}. Rolling back.`;
+    if (showAlertAndUpdateUI) {
+      alert(errorMessage);
+    } else {
+      console.error(`${errorMessage} for ticket id ${id}`);
+    }
     // Rollback the insertion
     await supabase.from('dispatchtickets').delete().eq('id', newDispatchedTicket.id);
     return;
   }
 
   // 3. Update local state and UI
-  state.reports = state.reports.filter(r => r.id !== id);
-  alert(`TRANSMITTED: Resource dispatched to ${reportToDispatch.suggestedDepartment}.`);
-  updateUI();
+  if (showAlertAndUpdateUI) {
+    state.reports = state.reports.filter(r => r.id !== id);
+    alert(`TRANSMITTED: Resource dispatched to ${reportToDispatch.suggestedDepartment}.`);
+    updateUI();
+  }
 };
 
 window.deleteDispatchedTicket = async (id) => {
@@ -474,7 +576,9 @@ document.getElementById('capture-btn').addEventListener('click', async () => {
   const dataUrl = canvas.toDataURL('image/jpeg');
   
   try {
+    const locationPromise = getBrowserLocation();
     const result = await analyzeImage(dataUrl);
+    const locationObj = await locationPromise;
 
     const { data: newTicket, error } = await supabase
       .from('tickets')
@@ -484,6 +588,8 @@ document.getElementById('capture-btn').addEventListener('click', async () => {
         Risks: result.possibleRisks,
         Image: dataUrl,
         is_dispatched: false,
+        lat: locationObj?.lat,
+        long: locationObj?.long,
       })
       .select()
       .single();
@@ -498,6 +604,9 @@ document.getElementById('capture-btn').addEventListener('click', async () => {
       category: newTicket.category,
       possibleRisks: newTicket.Risks,
       imageUrl: newTicket.Image,
+      location: locationObj ? `${locationObj.lat}, ${locationObj.long}` : 'Not Available',
+      lat: locationObj?.lat,
+      long: locationObj?.long,
       severityLevel: result.severityLevel,
       confidenceLevel: result.confidenceLevel,
       reasonForSeverity: 'AI-generated based on visual analysis.',
@@ -542,7 +651,9 @@ document.getElementById('file-input').addEventListener('change', (e) => {
     if(uploadArea) uploadArea.style.display = 'none';
 
     try {
+      const locationPromise = getBrowserLocation();
       const result = await analyzeImage(dataUrl);
+      const locationObj = await locationPromise;
 
       const { data: newTicket, error } = await supabase
         .from('tickets')
@@ -552,6 +663,8 @@ document.getElementById('file-input').addEventListener('change', (e) => {
           Risks: result.possibleRisks,
           Image: dataUrl,
         is_dispatched: false,
+        lat: locationObj?.lat,
+        long: locationObj?.long,
         })
         .select()
         .single();
@@ -566,6 +679,9 @@ document.getElementById('file-input').addEventListener('change', (e) => {
         category: newTicket.category,
         possibleRisks: newTicket.Risks,
         imageUrl: newTicket.Image,
+        location: locationObj ? `${locationObj.lat}, ${locationObj.long}` : 'Not Available',
+        lat: locationObj?.lat,
+        long: locationObj?.long,
         severityLevel: result.severityLevel,
         confidenceLevel: result.confidenceLevel,
         reasonForSeverity: 'AI-generated based on visual analysis.',
