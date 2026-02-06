@@ -9,6 +9,7 @@ export default defineConfig(({ mode }) => {
       'process.env.API_KEY': JSON.stringify(env.API_KEY),
       'process.env.SUPABASE': JSON.stringify(env.SUPABASE),
       'process.env.DB_API_KEY': JSON.stringify(env.DB_API_KEY),
+      'process.env.ML_API_URL': JSON.stringify(env.ML_API_URL),
     },
     server: {
       proxy: {
