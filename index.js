@@ -8,7 +8,7 @@ const ML_API_URL = process.env.ML_API_URL || "/ML_analyze";
 const REPORT_SCHEMA = {
   type: Type.OBJECT,
   properties: {
-    detectedIssue: { type: Type.STRING },
+    detectedIssue: { type: Type.STRING, description: "A short, single-line summary of the issue." },
     category: { type: Type.STRING },
     severityLevel: { type: Type.STRING },
     possibleRisks: { type: Type.STRING },
@@ -30,6 +30,12 @@ CRITICAL INSTRUCTIONS ON SCORING:
    - 'Medium': Functional issue that needs timely intervention.
    - 'Low': Cosmetic or non-urgent maintenance.
 3. CATEGORY: (Maintenance, Cleanliness, Safety, Infrastructure, Electrical, Plumbing).
+4. DETECTED ISSUE: Provide a short, single-line summary.
+
+IMPORTANT:
+- If the image looks normal or clean, report "No Issue" with a confidence of 0.
+- Do not hallucinate issues.
+- If sensor data is provided, verify it visually. If the image contradicts the sensor data, trust the image.
 
 Respond ONLY with valid JSON. Focus on campus infrastructure.`;
 
@@ -96,7 +102,7 @@ async function analyzeImage(base64Data) {
       const mlResult = await mlResponse.json();
       // If the ML model found something, format it for Gemini
       if (mlResult) {
-        mlContext = `\n\n[ADDITIONAL SENSOR DATA FROM COMPUTER VISION]:\n${JSON.stringify(mlResult)}\n\nUse this sensor data to confirm your visual diagnosis.`;
+        mlContext = `\n\n[ADDITIONAL SENSOR DATA FROM COMPUTER VISION]:\n${JSON.stringify(mlResult)}\n\nNOTE: This sensor data may be a false positive. Only report issues that are clearly visible in the image.`;
         console.log("ML Engine Context:", mlResult);
       }
     }
@@ -296,7 +302,7 @@ async function fetchAndSetTickets() {
     const processedTicketIds = new Set();
     const ticketsToDispatch = [];
 
-    if (ticketsWithLocation.length > 5) {
+    if (ticketsWithLocation.length > 2) {
       for (const ticket of ticketsWithLocation) {
         if (processedTicketIds.has(ticket.id)) {
           continue;
@@ -310,7 +316,7 @@ async function fetchAndSetTickets() {
           return distance < 0.05; // 50 meters radius
         });
 
-        if (nearbyGroup.length > 5) {
+        if (nearbyGroup.length > 2) {
           nearbyGroup.forEach(t => {
             if (!processedTicketIds.has(t.id)) {
               ticketsToDispatch.push(t);
