@@ -3,7 +3,8 @@ import cv2
 import numpy as np
 from core.decision_engine import process_frame
 
-from modules.water_leak.leak_pipeline import process_water_frame
+
+from modules.water_leak.leak_pipeline import process_water_frame, reset_state
 from modules.waste_monitor.waste_pipeline import process_waste_frame
 app = FastAPI()
 
@@ -16,6 +17,8 @@ def read_image(file):
 
 @app.post("/water-detect")
 async def detect_water(file: UploadFile = File(...)):
+
+    reset_state()   # <-- this is the missing brain wipe
 
     frame = read_image(await file.read())
 

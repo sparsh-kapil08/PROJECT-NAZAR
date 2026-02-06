@@ -1,64 +1,50 @@
 import cv2
-import time
 import numpy as np
 from detectors.water_detector import detect_raw_puddles
 from detectors.person_detector import detect_person
 
 
-
-CONFIRM_TIME = 180   # seconds
-ALERT_COOLDOWN = 180
-
-first_seen = None
-last_alert = 0
-
+area_buffer = []
 
 def process_water_frame(frame):
 
-    global first_seen, last_alert
-
-    # 👤 Human present → ignore scene
+    # 🚫 only strict rule: ignore humans
     if detect_person(frame):
-        first_seen = None
+
+        area_buffer.clear()
         return None, None
 
     _, puddles, mask = detect_raw_puddles(frame)
 
     area = sum(cv2.contourArea(c) for c in puddles)
 
-    # no water visible
-    if area < 250:
-        first_seen = None
+    area_buffer.append(area)
+    if len(area_buffer) > 10:
+        area_buffer.pop(0)
+
+    if len(area_buffer) < 4:
         return None, mask
 
-    now = time.time()
+    avg = np.mean(area_buffer)
 
-    # start confirmation timer
-    if first_seen is None:
-        first_seen = now
+    # loose boundary — ensures leaks always pass
+    if avg < 250:
         return None, mask
 
-    # wait until confirmed stable
-    if now - first_seen < CONFIRM_TIME:
-        return None, mask
-
-    # cooldown between alerts
-    if now - last_alert < ALERT_COOLDOWN:
-        return None, mask
-
-    # severity
-    if area > 1200:
+    severity = "LOW"
+    if avg > 1200:
         severity = "HIGH"
-    elif area > 600:
+    elif avg > 600:
         severity = "MEDIUM"
-    else:
-        severity = "LOW"
-
-    last_alert = now
 
     return {
         "issue": "WATER LEAK / SPILL",
         "severity": severity,
-        "area": int(area),
-        "confirmed_after_sec": int(now - first_seen)
+        "area": int(avg)
     }, mask
+
+
+def reset_state():
+    global buffer, _prev_gray
+    buffer = []
+    _prev_gray = None
