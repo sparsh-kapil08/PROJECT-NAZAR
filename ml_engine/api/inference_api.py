@@ -7,6 +7,7 @@ from core.decision_engine import process_frame
 from modules.water_leak.leak_pipeline import process_water_frame, reset_state
 from modules.waste_monitor.waste_pipeline import process_waste_frame
 from modules.unauthorised_monitor.detector import detector
+from detectors.broken_infra_detector import BrokenInfrastructureDetector
 
 
 app = FastAPI()
@@ -16,6 +17,39 @@ app = FastAPI()
 def read_image(file):
     data = np.frombuffer(file, np.uint8)
     return cv2.imdecode(data, cv2.IMREAD_COLOR)
+
+broken_infra_detector = BrokenInfrastructureDetector(
+    model_path="yolov8n.pt"
+)
+
+
+def read_image(file: UploadFile):
+    contents = file.file.read()
+    np_img = np.frombuffer(contents, np.uint8)
+    img = cv2.imdecode(np_img, cv2.IMREAD_COLOR)
+    return img
+
+
+@app.post("/detect/broken-infrastructure")
+async def detect_broken_infrastructure(
+    file: UploadFile = File(...)
+):
+    frame = read_image(file)
+
+    if frame is None:
+        return {
+            "success": False,
+            "message":"Invalid image"
+        }
+
+    detections = broken_infra_detector.detect(frame)
+
+    return {
+        "success": True,
+        "issue": "broken_infrastructure",
+        "detected_count": len(detections),
+        "detections": detections
+    }
 
 
 @app.post("/water-detect")
