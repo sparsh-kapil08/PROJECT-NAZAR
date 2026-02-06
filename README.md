@@ -1,28 +1,373 @@
-PROJECT NAZAR is an automated maintenance system for DTU. It uses a multi-model AI approach to detect campus issues, score severity, and dispatch tickets via Supabase.
+🚀 PROJECT NAZAR
+AI-Powered Multi-Intelligence Campus Monitoring & Issue Management Platform
 
-🚀 Key Features
-Dual-Layer AI: Combines local Computer Vision (FastAPI) with Google Gemini for high-level visual reasoning.
+Team Name: TEAM STYLUS
 
-Live Inspection: Real-time camera stream for instant issue detection.
+Project: PROJECT NAZAR
 
-Automated Workflow: Detects, categorizes, and archives tickets in Supabase for maintenance dispatch.
+📖 Table of Contents
 
-Smart Scoring: Auto-assigns severity (High/Medium/Low) and identifies safety risks.
+Overview
 
-🛠️ Tech Stack
-Frontend: JavaScript (ES6+), Tailwind CSS.
+System Architecture
 
-AI: Google Gemini (3 Flash & 2.5 Flash).
+Intelligence Layer Design
 
-Backend: Supabase (PostgreSQL).
+End-to-End Execution Flow
 
-ML Engine: Python FastAPI (Local Context).
+Intelligence Modules (1–5)
 
-💻 Setup
-Environment: Set API_KEY (Gemini) and Supabase credentials.
+API Design
 
-ML Engine: Run python -m uvicorn main:app --port 8000.
+Technology Stack
 
-Frontend: Serve index.html via npx serve.
+Scalability & Deployment
 
-Install the requirements.txt in ml_engine
+Performance Goals
+
+Privacy & Ethics
+
+Future Roadmap
+
+🌍 1. Overview
+
+Project NAZAR is a real-time multi-intelligence computer vision platform that proactively detects and manages physical infrastructure issues across large campuses using camera inputs.
+
+Instead of relying on:
+
+❌ Manual inspection
+❌ Complaint-based reporting
+❌ Reactive maintenance
+
+NAZAR continuously monitors environments and automatically identifies:
+
+• Water leaks & spills
+• Energy wastage
+• Waste & litter accumulation
+• Broken infrastructure
+• Unauthorized room access
+
+The system produces:
+
+✅ Visual evidence
+✅ Structured alerts
+✅ Severity scoring
+✅ API-ready outputs
+
+🏗️ 2. System Architecture
+Camera / Image Upload
+        ↓
+Preprocessing Layer
+        ↓
+Multi-Intelligence Router
+        ↓
+┌───────────────┐
+│ Energy Model  │
+│ Water Model   │
+│ Waste Model   │
+│ Infra Model   │
+│ Access Model  │
+└───────────────┘
+        ↓
+Decision Engine
+        ↓
+API Response + Evidence Storage
+        ↓
+Dashboard / Alerts / Analytics
+
+
+Each intelligence layer operates independently and can be scaled or upgraded without affecting others.
+
+🧠 3. Intelligence Layer Philosophy
+
+Project NAZAR avoids overfitting-heavy deep learning whenever unnecessary.
+
+It combines:
+
+Deep learning where perception is needed (YOLO, MediaPipe)
+
+Classical computer vision where structure matters
+
+Rule-based decision intelligence for explainability
+
+This hybrid approach gives:
+
+✔ Stability
+✔ Interpretability
+✔ Low compute cost
+✔ High real-world robustness
+
+🔄 4. End-to-End Execution Flow
+
+Frame received (CCTV, API upload, snapshot)
+
+Routed to selected intelligence module
+
+Visual analysis performed
+
+Context logic applied
+
+Temporal validation if required
+
+Evidence captured
+
+Structured response returned
+
+⚡ INTELLIGENCE 1 — ENERGY WASTE DETECTION
+🎯 Goal
+
+Detect energy consumption in empty spaces.
+
+🧩 Detection Logic
+
+Human presence via MediaPipe pose detection
+
+Light intensity via brightness histogram
+
+Fan motion via frame differencing
+
+Time persistence buffering
+
+🔍 Trigger Condition
+No human present
+AND lights/fans active
+FOR threshold duration
+→ Energy waste confirmed
+
+📤 Output
+{
+  "issue": "energy_waste",
+  "duration": 120,
+  "status": "confirmed"
+}
+
+💧 INTELLIGENCE 2 — WATER LEAKAGE & SPILL DETECTION
+🎯 Goal
+
+Detect real water accumulation while rejecting glare, humans, and sunlight.
+
+🧠 Pipeline
+
+Floor-only ROI extraction
+
+HSV-based reflective water signature
+
+Texture shimmer analysis
+
+Shape irregularity checks
+
+Optical flow validation
+
+Temporal persistence buffer
+
+📊 Classification
+Condition	Interpretation
+Flowing + small area	Indoor leak
+Static + large area	Outdoor clog
+Expanding	Active spill
+📤 Output
+{
+  "issue": "water_leak",
+  "severity": "HIGH",
+  "area": 1340
+}
+
+🗑️ INTELLIGENCE 3 — WASTE & LITTER DETECTION
+🎯 Goal
+
+Detect clutter anywhere and trash inside dustbins.
+
+🧠 Approach
+
+YOLOv8 detects waste objects
+
+Validator filters non-waste shapes
+
+Context awareness checks bin proximity
+
+♻ Supported Classes (expandable)
+
+Plastic bottles
+
+Cups
+
+Cans
+
+Bags
+
+Wrappers
+
+Paper waste
+
+Food containers
+
+📤 Output
+{
+  "issue": "waste_detected",
+  "count": 6,
+  "objects": [...]
+}
+
+🪑 INTELLIGENCE 4 — BROKEN INFRASTRUCTURE MODEL
+🧠 Core Idea
+
+Detect structural abnormality instead of damage types.
+
+⚙️ Detailed Flow
+Step 1 — Object Detection
+
+YOLOv8 identifies:
+
+Chairs
+
+Desks
+
+Tables
+
+Step 2 — ROI Cropping
+
+Each object isolated for clean analysis.
+
+Step 3 — Geometry Processing
+
+Grayscale
+
+Blur
+
+Edge detection
+
+Contour extraction
+
+Step 4 — Abnormality Rules
+
+Distorted aspect ratio
+
+Broken shape continuity
+
+Structural collapse
+
+Step 5 — Reporting
+{
+  "issue": "broken_infrastructure",
+  "detections": [...]
+}
+
+🏆 Engineering Advantage
+
+✔ No massive dataset required
+✔ Works on noisy cameras
+✔ Explainable decisions
+
+🚪 INTELLIGENCE 5 — UNAUTHORIZED ROOM ACCESS
+🎯 Goal
+
+Detect human presence outside allowed access hours.
+
+🔍 Components
+Visual Layer
+
+MediaPipe human presence detection
+
+Context Layer
+
+Time window validation
+
+Decision Layer
+Person detected AND time outside allowed → violation
+
+📤 Output
+{
+  "violation": true,
+  "timestamp": "22:41",
+  "evidence": "alerts/frame_0021.jpg"
+}
+
+🌐 6. API DESIGN
+
+Each intelligence is exposed via FastAPI endpoints:
+
+Endpoint	Function
+/energy-detect	Energy waste
+/water-detect	Water issues
+/waste-detect	Waste & litter
+/infra-detect	Broken assets
+/access-detect	Unauthorized entry
+
+All endpoints support:
+
+✔ Image uploads
+✔ JSON responses
+✔ Swagger testing
+
+🛠️ 7. Technology Stack
+Vision & ML
+
+OpenCV
+
+YOLOv8
+
+MediaPipe
+
+NumPy
+
+Backend
+
+FastAPI
+
+Python
+
+Frontend
+
+React
+
+HTML/CSS
+
+Cloud
+
+Supabase
+
+📈 8. Scalability
+
+Stateless APIs
+
+Camera-agnostic
+
+Modular intelligence layers
+
+Cloud-ready inference
+
+Supports:
+
+✔ Hundreds of cameras
+✔ Snapshot uploads
+✔ Mobile integration
+
+🔐 9. Privacy & Ethics
+
+No face recognition
+
+No identity tracking
+
+Event-based evidence only
+
+Time-limited storage
+
+Designed to comply with surveillance best practices.
+
+🚀 10. Future Roadmap
+
+Predictive maintenance
+
+Issue heatmaps
+
+Automated ticket routing
+
+Smart campus analytics
+
+IoT sensor fusion
+
+🎯 Final Vision
+
+Project NAZAR converts raw camera feeds into real-time campus intelligence.
+
+From passive recording → to proactive problem solving.
