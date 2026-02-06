@@ -152,7 +152,6 @@ async function analyzeImage(base64Data) {
       // If the ML model found something, format it for Gemini
       if (mlResult) {
         mlContext = `\n\n[ADDITIONAL SENSOR DATA FROM COMPUTER VISION]:\n${JSON.stringify(mlResult)}\n\nNOTE: This sensor data may be a false positive. Only report issues that are clearly visible in the image.`;
-        console.log("ML Engine Context:", mlResult);
       }
     }
   } catch (e) {
@@ -673,7 +672,7 @@ document.getElementById('capture-btn').addEventListener('click', async () => {
       long: locationObj?.long,
       severityLevel: result.severityLevel,
       confidenceLevel: result.confidenceLevel,
-      reasonForSeverity: 'AI-generated based on visual analysis.',
+      reasonForSeverity: '',
       suggestedDepartment: 'Maintenance'
     };
     
@@ -748,7 +747,7 @@ document.getElementById('file-input').addEventListener('change', (e) => {
         long: locationObj?.long,
         severityLevel: result.severityLevel,
         confidenceLevel: result.confidenceLevel,
-        reasonForSeverity: 'AI-generated based on visual analysis.',
+        reasonForSeverity: '',
         suggestedDepartment: 'Maintenance'
       };
 
