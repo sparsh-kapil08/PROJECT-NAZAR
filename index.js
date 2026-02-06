@@ -81,7 +81,8 @@ let state = {
   reports: [],
   dispatchedReports: [],
   stream: null,
-  isAnalyzing: false
+  isAnalyzing: false,
+  authorizedTimes: []
 };
 
 function getBrowserLocation() {
@@ -128,6 +129,17 @@ async function analyzeImage(base64Data) {
     const blob = await fetchRes.blob();
     const formData = new FormData();
     formData.append("file", blob, "image.jpg");
+
+    // Check if current time is within any restricted AuthorizedTime range
+    const now = new Date();
+    const currentTime = now.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const isRestricted = state.authorizedTimes.some(t => {
+      return t.TimeMin && t.TimeMax && currentTime >= t.TimeMin && currentTime <= t.TimeMax;
+    });
+
+    if (isRestricted) {
+      formData.append("check_unauthorized", "true");
+    }
 
     // Call Python API (assuming default FastAPI port 8000)
     const mlResponse = await fetch(ML_API_URL, {
@@ -402,6 +414,15 @@ async function fetchAndSetDispatchedTickets() {
       reasonForSeverity: 'This ticket has been dispatched and is archived.',
       suggestedDepartment: 'Maintenance',
     }));
+  }
+}
+
+async function fetchAuthorizedTimes() {
+  const { data, error } = await supabase.from('AuthorizedTime').select('*');
+  if (error) {
+    console.error("Could not fetch AuthorizedTime:", error.message);
+  } else if (data) {
+    state.authorizedTimes = data;
   }
 }
 
@@ -752,4 +773,5 @@ document.getElementById('file-input').addEventListener('change', (e) => {
 
 // 2. Start App
 fetchAndSetTickets();
+fetchAuthorizedTimes();
 updateUI();

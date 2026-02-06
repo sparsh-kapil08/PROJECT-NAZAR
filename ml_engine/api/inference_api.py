@@ -7,13 +7,15 @@ from core.decision_engine import process_frame
 
 from modules.water_leak.leak_pipeline import process_water_frame
 from modules.waste_monitor.waste_pipeline import process_waste_frame
+from detectors.person_detector import detect_person
 app = FastAPI()
 
 @app.post("/ML_analyze")
 async def analyze_image(
     file: UploadFile = File(...),
     start_hour: Optional[int] = Form(None),
-    end_hour: Optional[int] = Form(None)
+    end_hour: Optional[int] = Form(None),
+    check_unauthorized: bool = Form(False)
 ):
     """
     Single endpoint to analyze an image for multiple potential issues.
@@ -38,7 +40,14 @@ async def analyze_image(
             results["waste"] = waste_result
 
         # Pipeline Step 3: Unauthorized Access Detection (if configured)
-        if start_hour is not None and end_hour is not None:
+        if check_unauthorized:
+            if detect_person(frame):
+                results["unauthorized_access"] = {
+                    "status": "DETECTED",
+                    "message": "Unauthorized person detected during restricted hours",
+                    "severity": "High"
+                }
+        elif start_hour is not None and end_hour is not None:
             if not (0 <= start_hour <= 23 and 0 <= end_hour <= 23):
                 results["unauthorized_access"] = {"status": "ERROR", "message": "Hours must be between 0 and 23"}
             else:
