@@ -2,6 +2,7 @@
 AI-Powered Multi-Intelligence Campus Monitoring & Issue Management Platform
 
 Team Name: TEAM STYLUS
+
 Project: PROJECT NAZAR
 
 📖 Table of Contents
