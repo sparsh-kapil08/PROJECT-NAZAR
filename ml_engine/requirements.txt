@@ -1,8 +1,9 @@
 opencv-python-headless
-mediapipe
+mediapipe==0.10.14
 fastapi
 uvicorn
 numpy
 pydantic
 scikit-learn
 joblib
+ultralytics
