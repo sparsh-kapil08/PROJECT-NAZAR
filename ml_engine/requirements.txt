@@ -6,3 +6,6 @@ pydantic
 scikit-learn
 joblib
 ultralytics
+python-multipart
+mediapipe
+PyOpenGL
