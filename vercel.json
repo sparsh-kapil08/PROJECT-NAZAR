@@ -1,0 +1,13 @@
+{
+  "buildCommand": "npm ci && npm run build",
+  "installCommand": "npm ci",
+  "framework": "vite",
+  "functions": {
+    "ml_engine/api/inference_api.py": {
+      "runtime": "python3.11"
+    }
+  },
+  "env": {
+    "npm_config_build_from_source": "false"
+  }
+}
