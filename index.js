@@ -5,6 +5,9 @@ import supabase from "./supabase.js";
 const CAMPUS_NAME = "DTU";
 const PRIMARY_COLOR = "#990000";
 const ML_API_URL = process.env.ML_API_URL || "/ML_analyze";
+if(!ML_API_URL) {
+  throw new Error("ML_API_URL is not set in environment variables");
+}
 
     /*
     TABLE SCHEMAS
@@ -195,9 +198,9 @@ async function checkUnauthorizedHuman(authorizedTimes) {
 }
 
 async function analyzeImage(base64Data) {
-  let mlContext = "";
+  // ===== ML ENGINE ANALYSIS ONLY (for pure ML model testing) =====
+  // Gemini responses are commented out below for re-enablement when needed
   
-  // 1. Attempt to consult the local ML Engine first
   try {
     // Convert Data URL to Blob for upload
     const fetchRes = await fetch(base64Data);
@@ -216,7 +219,7 @@ async function analyzeImage(base64Data) {
       formData.append("check_unauthorized", "true");
     }
 
-    // Call Python API (assuming default FastAPI port 8000)
+    // Call Python ML Engine API
     const mlResponse = await fetch(ML_API_URL, {
       method: "POST",
       body: formData
@@ -224,15 +227,55 @@ async function analyzeImage(base64Data) {
 
     if (mlResponse.ok) {
       const mlResult = await mlResponse.json();
-      // If the ML model found something, format it for Gemini
-      if (mlResult) {
-        mlContext = `\n\n[ADDITIONAL SENSOR DATA FROM COMPUTER VISION]:\n${JSON.stringify(mlResult)}\n\nNOTE: This sensor data may be a false positive. Only report issues that are clearly visible in the image.`;
+      console.log("ML Engine result:", mlResult);
+      
+      // Transform ML model response to match ticket schema
+      // ML API returns: { detection, category, severity, risks, confidence }
+      const ticket = {
+        detectedIssue: mlResult.detection || 'No Issue',
+        category: mlResult.category || 'General',
+        severityLevel: mlResult.severity || 'Low',
+        possibleRisks: mlResult.risks || 'No known risks',
+        confidenceLevel: mlResult.confidence || 0
+      };
+
+      console.log('[ML Analysis] Transformed ticket object:', ticket);
+
+      // Check for person detection and authorization
+      if (mlResult.detection?.toLowerCase().includes('person') && state.authorizedTimes.length > 0) {
+        console.log('[ML Analysis] Person detected - checking authorization...');
+        const unauthorizedStatus = await checkUnauthorizedHuman(state.authorizedTimes);
+        if (unauthorizedStatus) {
+          ticket.detectedIssue = 'Unauthorized Person Detected';
+          ticket.severityLevel = 'High';
+          ticket.category = 'Safety';
+          ticket.confidenceLevel = 95;
+          console.log('[ML Analysis] Unauthorized person detected - priority override');
+        }
       }
+
+      return ticket;
+    } else {
+      throw new Error(`ML Engine returned status ${mlResponse.status}`);
     }
   } catch (e) {
-    console.warn("ML Engine unavailable, proceeding with visual analysis only.", e);
+    console.error("ML Engine error:", e);
+    // Return default response if ML engine fails
+    return {
+      detectedIssue: 'No Issue',
+      category: 'General',
+      severityLevel: 'Low',
+      possibleRisks: 'Unable to analyze',
+      confidenceLevel: 0
+    };
   }
 
+  /* ===== GEMINI AI RESPONSES COMMENTED OUT FOR TESTING =====
+  // To re-enable AI enhancement, uncomment the try-catch blocks below
+  // The system will then use both ML detections + Gemini's AI analysis
+  
+  let mlContext = "";
+  
   try {
     console.log("PRIMARY MODEL");
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -384,8 +427,9 @@ async function analyzeImage(base64Data) {
     }
     return parsed;
   }
+  
+  ===== END GEMINI SECTION ===== */
 }
-
 
 function getSeverityStyles(level) {
   switch(level) {
@@ -775,6 +819,7 @@ window.dispatchTicket = async (id, showAlertAndUpdateUI = true) => {
       category: reportToDispatch.category,
       Risks: reportToDispatch.possibleRisks,
       Image: reportToDispatch.imageUrl,
+      confidence: reportToDispatch.confidenceLevel,
       lat: reportToDispatch.lat,
       long: reportToDispatch.long,
     }).select().single();
@@ -856,6 +901,7 @@ document.getElementById('capture-btn').addEventListener('click', async () => {
         category: result.category,
         Risks: result.possibleRisks,
         Image: dataUrl,
+        confidence: result.confidenceLevel,
         is_dispatched: false,
         lat: locationObj?.lat,
         long: locationObj?.long,
@@ -931,6 +977,7 @@ document.getElementById('file-input').addEventListener('change', (e) => {
           category: result.category,
           Risks: result.possibleRisks,
           Image: dataUrl,
+          confidence: result.confidenceLevel,
         is_dispatched: false,
         lat: locationObj?.lat,
         long: locationObj?.long,
@@ -975,7 +1022,6 @@ document.getElementById('file-input').addEventListener('change', (e) => {
   };
   reader.readAsDataURL(file);
 });
-
 // 2. Start App
 fetchAndSetTickets();
 fetchAuthorizedTimes();

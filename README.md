@@ -1,3 +1,12 @@
+---
+title: PROJECT NAZAR
+emoji: 👁️
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+pinned: false
+---
+
 🚀 PROJECT NAZAR
 AI-Powered Multi-Intelligence Campus Monitoring & Issue Management Platform
 

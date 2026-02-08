@@ -1,27 +1,56 @@
-from core.config import EMPTY_TIME_THRESHOLD
-from detectors.person_detector import detect_person
+"""
+Decision Engine for infrastructure analysis.
+
+Analyzes a single frame for:
+1. Energy waste (lights, fans)
+2. Broken infrastructure (cracks, damage)
+3. General maintenance issues
+"""
+
 from detectors.light_detector import detect_artificial_light
 from detectors.fan_motion_detector import detect_fan_motion
-from core.frame_buffer import EmptyRoomTracker
+from detectors.infrastructure_detector import detect_broken_infrastructure
 
-tracker = EmptyRoomTracker()
 
 def process_frame(frame):
-    person_present = detect_person(frame)
-    tracker.update(person_present)
-
-    if not tracker.is_empty_long_enough(EMPTY_TIME_THRESHOLD):
-        return None
-
+    """
+    Analyze frame for infrastructure issues.
+    
+    For single image analysis, we don't rely on temporal tracking.
+    Instead, we directly analyze what's visible in the frame.
+    
+    Returns:
+        Dictionary with detected issues, or None if no issues found
+    """
+    
+    issues = {}
+    
+    # ====== ENERGY WASTE DETECTION ======
     lights_on = detect_artificial_light(frame)
     fan_on = detect_fan_motion(frame)
-
+    
     if lights_on or fan_on:
-        return {
-            "issue": "energy_waste",
-            "lights_on": lights_on,
-            "fan_on": fan_on,
-            "status": "confirmed"
+        issues["energy_waste"] = {
+            "status": "DETECTED",
+            "issue_type": "Energy Waste",
+            "severity": "Medium",
+            "details": {
+                "lights_on": lights_on,
+                "fan_running": fan_on
+            }
         }
+    
+    # ====== BROKEN INFRASTRUCTURE DETECTION ======
+    is_broken, severity, details = detect_broken_infrastructure(frame)
+    
+    if is_broken:
+        issues["broken_infrastructure"] = {
+            "status": "DETECTED",
+            "issue_type": "Broken Infrastructure",
+            "severity": severity,
+            "details": details
+        }
+    
+    # Return all detected issues, or None if nothing found
+    return issues if issues else None
 
-    return None

@@ -1,6 +1,6 @@
-FROM python:3.10-slim
+FROM python:3.11-slim
 
-# Install system dependencies and Node.js/npm
+# Install system dependencies (minimal for Hugging Face)
 RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
@@ -10,9 +10,6 @@ RUN apt-get update && apt-get install -y \
     libsm6 \
     libxext6 \
     libxrender-dev \
-    gnupg \
-    nodejs \
-    npm \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -21,21 +18,14 @@ WORKDIR /app
 COPY . .
 
 # Install Python dependencies
-RUN pip install --upgrade pip && \
-    pip install -r ml_engine/requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r ml_engine/requirements.txt
 
-# Install frontend dependencies
-RUN npm install --unsafe-perm --legacy-peer-deps
+# Expose API port
+EXPOSE 7860
 
-# Expose backend and frontend ports
-EXPOSE 8000
-ARG FRONTEND_PORT=5000
-EXPOSE ${FRONTEND_PORT}
-
-# Add start script to run both services
-COPY start.sh /start.sh
-RUN chmod +x /start.sh
-
-# Run from ml_engine directory (the script will change directories as needed)
+# Set working directory for API
 WORKDIR /app/ml_engine
-CMD ["/start.sh"]
+
+# Run only the FastAPI backend (Hugging Face will handle the interface)
+CMD ["uvicorn", "api.inference_api:app", "--host", "0.0.0.0", "--port", "7860"]
