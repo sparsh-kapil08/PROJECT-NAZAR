@@ -10,9 +10,19 @@ from modules.waste_monitor.waste_pipeline import process_waste_frame
 from detectors.person_detector import detect_person
 from detectors.water_detector import detect_raw_puddles
 from detectors.waste_detector import detect_waste as detect_waste_raw
+from fastapi.middleware.cors import CORSMiddleware
+
+# ... after app = FastAPI() ...
+
 
 app = FastAPI()
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows your Vercel frontend to connect
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 def convert_numpy_types(obj):
     """
