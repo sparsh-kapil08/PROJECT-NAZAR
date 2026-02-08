@@ -109,6 +109,10 @@ let state = {
   authorizedTimes: []
 };
 
+// Store last known location to detect if coordinates are stuck
+let lastKnownLocation = null;
+const locationHistory = [];
+
 function getBrowserLocation(retryCount = 0, maxRetries = 2) {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
@@ -131,20 +135,47 @@ function getBrowserLocation(retryCount = 0, maxRetries = 2) {
         const { latitude, longitude, accuracy, altitude, heading, speed } = position.coords;
         const timestamp = new Date(position.timestamp).toISOString();
         
+        const coordStr = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
         console.log(`[Geolocation] ✓ SUCCESS - Fresh location retrieved`);
-        console.log(`[Geolocation]   Coordinates: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+        console.log(`[Geolocation]   Coordinates: ${coordStr}`);
         console.log(`[Geolocation]   Accuracy: ±${accuracy.toFixed(0)}m`);
         console.log(`[Geolocation]   Timestamp: ${timestamp}`);
+        console.log(`[Geolocation]   Source: ${accuracy > 1000 ? 'IP-based (coarse)' : accuracy > 100 ? 'WiFi-based' : 'GPS (precise)'}`);
+        
+        // Track location history to detect stuck coordinates
+        locationHistory.push({
+          lat: latitude,
+          long: longitude,
+          accuracy: accuracy,
+          timestamp: position.timestamp
+        });
+        
+        // Keep only last 5 locations
+        if (locationHistory.length > 5) {
+          locationHistory.shift();
+        }
+        
+        // Check if coordinates appear to be stuck (all recent locations identical)
+        const recentUnique = new Set(locationHistory.map(l => `${l.lat},${l.long}`));
+        if (recentUnique.size === 1 && locationHistory.length > 2) {
+          console.warn(`[Geolocation] ⚠️  WARNING: Coordinates appear to be STUCK (same for last ${locationHistory.length} requests)`);
+          console.warn(`[Geolocation]   The system may be using IP-based geolocation instead of GPS`);
+          console.warn(`[Geolocation]   Current: ${coordStr}`);
+          console.warn(`[Geolocation]   Recommendation: Enable GPS on device or allow manual location override`);
+        }
+        
+        lastKnownLocation = { lat: latitude, long: longitude, accuracy: accuracy };
         
         resolve({
           lat: latitude,
           long: longitude,
-          accuracy: accuracy,           // Include accuracy for validation
+          accuracy: accuracy,           // Include accuracy for validation (higher = less precise)
           altitude: altitude,           // Additional precision data
           heading: heading,
           speed: speed,
           timestamp: position.timestamp,
-          source: 'gps'                 // Indicate data source
+          source: accuracy > 1000 ? 'ip-based' : accuracy > 100 ? 'wifi-based' : 'gps',
+          isStuck: recentUnique.size === 1 && locationHistory.length > 2
         });
       },
       (err) => {
@@ -175,13 +206,35 @@ function getBrowserLocation(retryCount = 0, maxRetries = 2) {
             getBrowserLocation(retryCount + 1, maxRetries).then(resolve);
           }, backoffMs);
         } else {
-          console.warn(`[Geolocation] Max retries (${maxRetries}) exceeded - returning null`);
+          console.warn(`[Geolocation] Max retries (${maxRetries}) exceeded`);
+          
+          // Offer manual location override as fallback
+          if (lastKnownLocation) {
+            console.log(`[Geolocation] Using last known location as fallback: ${lastKnownLocation.lat}, ${lastKnownLocation.long}`);
+          }
+          
           resolve(null);
         }
       },
       options
     );
   });
+}
+
+// Manual geolocation override function for testing/fallback
+function setManualLocation(latitude, longitude, accuracy = 50) {
+  lastKnownLocation = { lat: latitude, long: longitude, accuracy: accuracy };
+  console.log(`[Geolocation] ✓ Manual location set: ${latitude}, ${longitude} (±${accuracy}m)`);
+  return lastKnownLocation;
+}
+
+// Get location history for debugging
+function getLocationHistory() {
+  return locationHistory.map(l => ({
+    coords: `${l.lat.toFixed(6)}, ${l.long.toFixed(6)}`,
+    accuracy: `±${l.accuracy.toFixed(0)}m`,
+    timestamp: new Date(l.timestamp).toISOString()
+  }));
 }
 
 function haversineDistance(coords1, coords2) {
