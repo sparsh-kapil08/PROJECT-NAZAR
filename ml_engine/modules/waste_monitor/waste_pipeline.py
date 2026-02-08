@@ -1,4 +1,4 @@
-from ml_engine.detectors.waste_detector import detect_waste
+from detectors.waste_detector import detect_waste
 
 
 def process_waste_frame(frame):

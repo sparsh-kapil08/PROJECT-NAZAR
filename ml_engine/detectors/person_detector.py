@@ -1,5 +1,5 @@
 import cv2
-from mediapipe.python.solutions import pose as mp_pose
+from mediapipe.solutions import pose as mp_pose
 
 pose = mp_pose.Pose()
 
