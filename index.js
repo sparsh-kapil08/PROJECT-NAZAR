@@ -113,7 +113,7 @@ let state = {
 let lastKnownLocation = null;
 const locationHistory = [];
 
-function getBrowserLocation(retryCount = 0, maxRetries = 2) {
+function getBrowserLocation() {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
       console.warn("[Geolocation] Geolocation API not available in this browser");
@@ -121,27 +121,29 @@ function getBrowserLocation(retryCount = 0, maxRetries = 2) {
       return;
     }
 
-    // High accuracy options to force fresh location data from each device
-    const options = {
-      enableHighAccuracy: true,  // Force high accuracy (uses GPS if available)
-      timeout: 15000,             // 15 second timeout for location request
-      maximumAge: 0               // CRITICAL: Do NOT use cached location - always fetch fresh data
-    };
+    let highAccuracyAttempt = 0;
+    let locationResolved = false;
 
-    console.log(`[Geolocation] Requesting fresh location data (attempt ${retryCount + 1}/${maxRetries + 1})...`);
-
-    navigator.geolocation.getCurrentPosition(
+    // Use watchPosition for continuous location updates until high accuracy is achieved
+    const watchID = navigator.geolocation.watchPosition(
       (position) => {
+        highAccuracyAttempt++;
+        
         const { latitude, longitude, accuracy, altitude, heading, speed } = position.coords;
         const timestamp = new Date(position.timestamp).toISOString();
-        
-        const coordStr = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-        console.log(`[Geolocation] ✓ SUCCESS - Fresh location retrieved`);
-        console.log(`[Geolocation]   Coordinates: ${coordStr}`);
+
+        // Ignore coarse locations (likely IP/WiFi-based) - only accept GPS-level accuracy
+        if (accuracy > 500 && highAccuracyAttempt < 3) {
+          console.log(`[Geolocation] Attempt ${highAccuracyAttempt}: Waiting for better accuracy... current: ±${accuracy.toFixed(0)}m (coarse location ignored)`);
+          return;
+        }
+
+        console.log(`[Geolocation] ✓ PRECISE LOCATION FOUND (Attempt ${highAccuracyAttempt})`);
+        console.log(`[Geolocation]   Coordinates: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
         console.log(`[Geolocation]   Accuracy: ±${accuracy.toFixed(0)}m`);
         console.log(`[Geolocation]   Timestamp: ${timestamp}`);
-        console.log(`[Geolocation]   Source: ${accuracy > 1000 ? 'IP-based (coarse)' : accuracy > 100 ? 'WiFi-based' : 'GPS (precise)'}`);
-        
+        console.log(`[Geolocation]   Source: ${accuracy < 100 ? 'GPS (very precise)' : accuracy < 500 ? 'GPS-like (good)' : 'IP/WiFi (coarse)'}`);
+
         // Track location history to detect stuck coordinates
         locationHistory.push({
           lat: latitude,
@@ -149,34 +151,34 @@ function getBrowserLocation(retryCount = 0, maxRetries = 2) {
           accuracy: accuracy,
           timestamp: position.timestamp
         });
-        
+
         // Keep only last 5 locations
         if (locationHistory.length > 5) {
           locationHistory.shift();
         }
-        
-        // Check if coordinates appear to be stuck (all recent locations identical)
-        const recentUnique = new Set(locationHistory.map(l => `${l.lat},${l.long}`));
-        if (recentUnique.size === 1 && locationHistory.length > 2) {
-          console.warn(`[Geolocation] ⚠️  WARNING: Coordinates appear to be STUCK (same for last ${locationHistory.length} requests)`);
-          console.warn(`[Geolocation]   The system may be using IP-based geolocation instead of GPS`);
-          console.warn(`[Geolocation]   Current: ${coordStr}`);
-          console.warn(`[Geolocation]   Recommendation: Enable GPS on device or allow manual location override`);
-        }
-        
+
         lastKnownLocation = { lat: latitude, long: longitude, accuracy: accuracy };
-        
-        resolve({
-          lat: latitude,
-          long: longitude,
-          accuracy: accuracy,           // Include accuracy for validation (higher = less precise)
-          altitude: altitude,           // Additional precision data
-          heading: heading,
-          speed: speed,
-          timestamp: position.timestamp,
-          source: accuracy > 1000 ? 'ip-based' : accuracy > 100 ? 'wifi-based' : 'gps',
-          isStuck: recentUnique.size === 1 && locationHistory.length > 2
-        });
+
+        // Stop watching once we have good accuracy (< 100m)
+        if (accuracy < 100) {
+          console.log(`[Geolocation] ✓ High accuracy achieved (±${accuracy.toFixed(0)}m). Stopping location watch.`);
+          navigator.geolocation.clearWatch(watchID);
+          
+          if (!locationResolved) {
+            locationResolved = true;
+            resolve({
+              lat: latitude,
+              long: longitude,
+              accuracy: accuracy,
+              altitude: altitude,
+              heading: heading,
+              speed: speed,
+              timestamp: position.timestamp,
+              source: 'gps',
+              attempts: highAccuracyAttempt
+            });
+          }
+        }
       },
       (err) => {
         let errorMsg = "Unknown error";
@@ -189,35 +191,49 @@ function getBrowserLocation(retryCount = 0, maxRetries = 2) {
             errorMsg = "Location information is unavailable (GPS/network unavailable)";
             break;
           case err.TIMEOUT:
-            errorMsg = "Location request timed out";
+            errorMsg = "Location request timed out after 20 seconds";
             break;
           default:
             errorMsg = err.message;
         }
         
         console.warn(`[Geolocation] ✗ ERROR (Code ${err.code}): ${errorMsg}`);
+        navigator.geolocation.clearWatch(watchID);
         
-        // Retry logic: attempt up to maxRetries times with exponential backoff
-        if (retryCount < maxRetries) {
-          const backoffMs = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s backoff
-          console.log(`[Geolocation] Retrying in ${backoffMs}ms...`);
+        if (!locationResolved) {
+          locationResolved = true;
           
-          setTimeout(() => {
-            getBrowserLocation(retryCount + 1, maxRetries).then(resolve);
-          }, backoffMs);
-        } else {
-          console.warn(`[Geolocation] Max retries (${maxRetries}) exceeded`);
-          
-          // Offer manual location override as fallback
+          // Return last known location if available, otherwise null
           if (lastKnownLocation) {
             console.log(`[Geolocation] Using last known location as fallback: ${lastKnownLocation.lat}, ${lastKnownLocation.long}`);
+            resolve(lastKnownLocation);
+          } else {
+            resolve(null);
           }
-          
-          resolve(null);
         }
       },
-      options
+      {
+        enableHighAccuracy: true,   // Force GPS when available
+        maximumAge: 0,              // Always fetch fresh location
+        timeout: 20000              // 20 second timeout for high accuracy
+      }
     );
+
+    // Fallback timeout: if no good location within 25 seconds, resolve with whatever we have
+    setTimeout(() => {
+      if (!locationResolved) {
+        locationResolved = true;
+        navigator.geolocation.clearWatch(watchID);
+        
+        if (lastKnownLocation) {
+          console.warn(`[Geolocation] Timeout reached. Using last known location: ${lastKnownLocation.lat}, ${lastKnownLocation.long}`);
+          resolve(lastKnownLocation);
+        } else {
+          console.warn(`[Geolocation] Could not obtain location within timeout period`);
+          resolve(null);
+        }
+      }
+    }, 25000);
   });
 }
 
