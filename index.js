@@ -109,21 +109,77 @@ let state = {
   authorizedTimes: []
 };
 
-function getBrowserLocation() {
+function getBrowserLocation(retryCount = 0, maxRetries = 2) {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
+      console.warn("[Geolocation] Geolocation API not available in this browser");
       resolve(null);
       return;
     }
+
+    // High accuracy options to force fresh location data from each device
+    const options = {
+      enableHighAccuracy: true,  // Force high accuracy (uses GPS if available)
+      timeout: 15000,             // 15 second timeout for location request
+      maximumAge: 0               // CRITICAL: Do NOT use cached location - always fetch fresh data
+    };
+
+    console.log(`[Geolocation] Requesting fresh location data (attempt ${retryCount + 1}/${maxRetries + 1})...`);
+
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        const { latitude, longitude } = position.coords;
-        resolve({ lat: latitude, long: longitude });
+        const { latitude, longitude, accuracy, altitude, heading, speed } = position.coords;
+        const timestamp = new Date(position.timestamp).toISOString();
+        
+        console.log(`[Geolocation] ✓ SUCCESS - Fresh location retrieved`);
+        console.log(`[Geolocation]   Coordinates: ${latitude.toFixed(6)}, ${longitude.toFixed(6)}`);
+        console.log(`[Geolocation]   Accuracy: ±${accuracy.toFixed(0)}m`);
+        console.log(`[Geolocation]   Timestamp: ${timestamp}`);
+        
+        resolve({
+          lat: latitude,
+          long: longitude,
+          accuracy: accuracy,           // Include accuracy for validation
+          altitude: altitude,           // Additional precision data
+          heading: heading,
+          speed: speed,
+          timestamp: position.timestamp,
+          source: 'gps'                 // Indicate data source
+        });
       },
       (err) => {
-        console.warn("Location retrieval failed", err);
-        resolve(null);
-      }
+        let errorMsg = "Unknown error";
+        
+        switch(err.code) {
+          case err.PERMISSION_DENIED:
+            errorMsg = "User denied location permission - please enable location access in browser settings";
+            break;
+          case err.POSITION_UNAVAILABLE:
+            errorMsg = "Location information is unavailable (GPS/network unavailable)";
+            break;
+          case err.TIMEOUT:
+            errorMsg = "Location request timed out";
+            break;
+          default:
+            errorMsg = err.message;
+        }
+        
+        console.warn(`[Geolocation] ✗ ERROR (Code ${err.code}): ${errorMsg}`);
+        
+        // Retry logic: attempt up to maxRetries times with exponential backoff
+        if (retryCount < maxRetries) {
+          const backoffMs = Math.pow(2, retryCount) * 1000; // 1s, 2s, 4s backoff
+          console.log(`[Geolocation] Retrying in ${backoffMs}ms...`);
+          
+          setTimeout(() => {
+            getBrowserLocation(retryCount + 1, maxRetries).then(resolve);
+          }, backoffMs);
+        } else {
+          console.warn(`[Geolocation] Max retries (${maxRetries}) exceeded - returning null`);
+          resolve(null);
+        }
+      },
+      options
     );
   });
 }
