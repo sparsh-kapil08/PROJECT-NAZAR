@@ -7,5 +7,5 @@ scikit-learn
 joblib
 ultralytics
 python-multipart
-mediapipe
+mediapipe==0.10.14
 PyOpenGL
