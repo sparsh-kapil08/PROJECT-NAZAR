@@ -1,8 +1,8 @@
 import cv2
 import time
 import numpy as np
-from ml_engine.detectors.water_detector import detect_raw_puddles
-from ml_engine.detectors.person_detector import detect_person
+from detectors.water_detector import detect_raw_puddles
+from detectors.person_detector import detect_person
 
 
 

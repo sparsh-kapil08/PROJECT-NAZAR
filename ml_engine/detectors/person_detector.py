@@ -1,6 +1,7 @@
 import cv2
-from mediapipe.solutions import pose as mp_pose
+import mediapipe as mp
 
+mp_pose = mp.solutions.pose
 pose = mp_pose.Pose()
 
 def detect_person(frame):
