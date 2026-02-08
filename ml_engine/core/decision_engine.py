@@ -1,8 +1,8 @@
-from core.config import EMPTY_TIME_THRESHOLD
-from detectors.person_detector import detect_person
-from detectors.light_detector import detect_artificial_light
-from detectors.fan_motion_detector import detect_fan_motion
-from core.frame_buffer import EmptyRoomTracker
+from ml_engine.core.config import EMPTY_TIME_THRESHOLD
+from ml_engine.detectors.person_detector import detect_person
+from ml_engine.detectors.light_detector import detect_artificial_light
+from ml_engine.detectors.fan_motion_detector import detect_fan_motion
+from ml_engine.core.frame_buffer import EmptyRoomTracker
 
 tracker = EmptyRoomTracker()
 

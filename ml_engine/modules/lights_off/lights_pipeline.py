@@ -1,4 +1,4 @@
-from core.decision_engine import process_frame
+from ml_engine.core.decision_engine import process_frame
 
 class LightsOffSystem:
     def __init__(self):

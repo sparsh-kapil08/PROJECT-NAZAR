@@ -20,5 +20,5 @@ RUN pip install --upgrade pip && \
 # Expose port if needed (adjust as needed)
 EXPOSE 8000
 
-# Update this command based on how you start your app
-CMD ["python", "ml_engine/api/inference_api.py"]
+# Use uvicorn to run the FastAPI app
+CMD ["uvicorn", "ml_engine.api.inference_api:app", "--host", "0.0.0.0", "--port", "8000"]

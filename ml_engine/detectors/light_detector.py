@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
-from core.config import BRIGHTNESS_THRESHOLD
-from utils.roi_utils import extract_roi
+from ml_engine.core.config import BRIGHTNESS_THRESHOLD
+from ml_engine.utils.roi_utils import extract_roi
 
 def detect_artificial_light(frame):
     roi = extract_roi(frame)

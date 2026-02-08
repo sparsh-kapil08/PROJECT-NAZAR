@@ -3,11 +3,11 @@ from typing import Optional
 import cv2
 import numpy as np
 import traceback
-from core.decision_engine import process_frame
+from ml_engine.core.decision_engine import process_frame
 
-from modules.water_leak.leak_pipeline import process_water_frame
-from modules.waste_monitor.waste_pipeline import process_waste_frame
-from detectors.person_detector import detect_person
+from ml_engine.modules.water_leak.leak_pipeline import process_water_frame
+from ml_engine.modules.waste_monitor.waste_pipeline import process_waste_frame
+from ml_engine.detectors.person_detector import detect_person
 app = FastAPI()
 
 @app.post("/ML_analyze")

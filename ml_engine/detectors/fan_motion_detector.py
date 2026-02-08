@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from utils.roi_utils import extract_roi
+from ml_engine.utils.roi_utils import extract_roi
 
 prev_frame = None
 

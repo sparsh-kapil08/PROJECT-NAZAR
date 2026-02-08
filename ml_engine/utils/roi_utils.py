@@ -1,4 +1,4 @@
-from core.config import CEILING_ROI
+from ml_engine.core.config import CEILING_ROI
 
 
 
