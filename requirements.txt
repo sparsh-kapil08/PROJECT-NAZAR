@@ -1,0 +1,32 @@
+# Project-wide requirements combining ml_engine and water model
+# Pinned versions for reproducibility on Hugging Face Spaces
+
+# Core ML/Vision
+opencv-python-headless==4.8.0.76
+numpy==1.24.3
+scikit-learn==1.3.0
+Pillow==10.0.0
+
+# Deep Learning & Computer Vision
+torch==2.0.1
+torchvision==0.15.2
+segment-anything==1.0
+ultralytics==8.0.203
+mediapipe==0.10.14
+
+# ML Models
+xgboost==2.0.3
+joblib==1.3.2
+
+# Web Framework
+fastapi==0.104.1
+uvicorn==0.24.0
+python-multipart==0.0.6
+pydantic==2.4.2
+
+# UI & Visualization
+gradio==4.0.2
+matplotlib==3.7.2
+
+# Utilities
+PyOpenGL==3.1.7

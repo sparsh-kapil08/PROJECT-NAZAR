@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  ml-api:
+    build:
+      dockerfile: ml_engine/Dockerfile
+      context: .
+    ports:
+      - "7860:7860"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - OMP_NUM_THREADS=1
+    volumes:
+      - ./ml_engine:/home/user/app/ml_engine
+      - ./water\ model:/home/user/app/water\ model
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:7860/docs', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
