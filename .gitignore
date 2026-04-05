@@ -24,3 +24,4 @@ dist-ssr
 *.sw?
 index.tsx
 .env
+sam_vit_b.pth
