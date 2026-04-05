@@ -1,16 +1,30 @@
 from fastapi import FastAPI, UploadFile, File, Form
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 import cv2
 import numpy as np
 import traceback
-from core.decision_engine import process_frame
-
-from modules.water_leak.leak_pipeline import process_water_frame
-from modules.waste_monitor.waste_pipeline import process_waste_frame
-from detectors.person_detector import detect_person
-from detectors.water_detector import detect_raw_puddles
-from detectors.waste_detector import detect_waste as detect_waste_raw
+import sys
+import importlib.util
+from pathlib import Path
+from PIL import Image
 from fastapi.middleware.cors import CORSMiddleware
+
+# Ensure ml_engine root is importable regardless of launch cwd.
+ML_ENGINE_ROOT = Path(__file__).resolve().parents[1]
+if str(ML_ENGINE_ROOT) not in sys.path:
+    sys.path.insert(0, str(ML_ENGINE_ROOT))
+
+try:
+    from core.decision_engine import process_frame
+    from modules.water_leak.leak_pipeline import process_water_frame
+    from modules.waste_monitor.waste_pipeline import process_waste_frame
+    from detectors.person_detector import detect_person
+except ModuleNotFoundError:
+    # Support execution/import from repo root where `ml_engine` is package-prefixed.
+    from ml_engine.core.decision_engine import process_frame
+    from ml_engine.modules.water_leak.leak_pipeline import process_water_frame
+    from ml_engine.modules.waste_monitor.waste_pipeline import process_waste_frame
+    from ml_engine.detectors.person_detector import detect_person
 
 # ... after app = FastAPI() ...
 
@@ -23,6 +37,115 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_WATER_MODEL_PREDICT_FN = None
+_WATER_MODEL_LOAD_ERROR = None
+
+
+def _load_water_model_predict_fn():
+    """
+    Lazy-load `water model/app.py` and return its `predict` function.
+
+    This keeps startup resilient: if water model artifacts are missing,
+    API still works using the legacy detector as fallback.
+    """
+    global _WATER_MODEL_PREDICT_FN, _WATER_MODEL_LOAD_ERROR
+
+    if _WATER_MODEL_PREDICT_FN is not None:
+        return _WATER_MODEL_PREDICT_FN
+    if _WATER_MODEL_LOAD_ERROR is not None:
+        raise RuntimeError(_WATER_MODEL_LOAD_ERROR)
+
+    repo_root = Path(__file__).resolve().parents[2]
+    water_model_dir = repo_root / "water model"
+    water_model_file = water_model_dir / "app.py"
+
+    if not water_model_file.exists():
+        _WATER_MODEL_LOAD_ERROR = f"Water model entrypoint not found: {water_model_file}"
+        raise RuntimeError(_WATER_MODEL_LOAD_ERROR)
+
+    try:
+        # `water model/app.py` imports local modules by filename.
+        if str(water_model_dir) not in sys.path:
+            sys.path.insert(0, str(water_model_dir))
+
+        spec = importlib.util.spec_from_file_location("water_model_app", str(water_model_file))
+        if spec is None or spec.loader is None:
+            raise RuntimeError("Failed to create module spec for water model")
+
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        predict_fn = getattr(module, "predict", None)
+        if predict_fn is None:
+            raise RuntimeError("`predict` function not found in water model app")
+
+        _WATER_MODEL_PREDICT_FN = predict_fn
+        return _WATER_MODEL_PREDICT_FN
+    except Exception as exc:
+        _WATER_MODEL_LOAD_ERROR = str(exc)
+        raise
+
+
+def run_water_model(frame_bgr: np.ndarray) -> Tuple[Optional[Dict[str, Any]], bool, Dict[str, Any]]:
+    """
+    Run the standalone water model and map output to API's water_leak schema.
+
+    Returns (water_result, should_fallback, status_meta).
+    Fallback should only be used when the new model is unavailable or errors.
+    """
+    try:
+        predict_fn = _load_water_model_predict_fn()
+    except Exception as exc:
+        return None, True, {
+            "water_model_status": "unavailable",
+            "water_model_error": str(exc),
+        }
+
+    try:
+        frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+        image_pil = Image.fromarray(frame_rgb)
+
+        result = predict_fn(image_pil)
+        if not isinstance(result, dict):
+            return None, False, {
+                "water_model_status": "invalid_output",
+                "raw_result_type": str(type(result)),
+            }
+
+        label = result.get("prediction")
+        confidence = float(result.get("confidence", 0.0) or 0.0)
+
+        if label != "water_spill":
+            return None, False, {
+                "water_model_status": "clear",
+                "prediction": label,
+                "confidence_score": confidence,
+            }
+
+        if confidence >= 0.85:
+            severity = "HIGH"
+        elif confidence >= 0.70:
+            severity = "MEDIUM"
+        else:
+            severity = "LOW"
+
+        return {
+            "issue": "WATER LEAK / SPILL",
+            "severity": severity,
+            "model": "sam_xgboost",
+            "prediction": label,
+            "confidence_score": confidence,
+        }, False, {
+            "water_model_status": "detected",
+            "prediction": label,
+            "confidence_score": confidence,
+        }
+    except Exception as exc:
+        return None, True, {
+            "water_model_status": "runtime_error",
+            "water_model_error": str(exc),
+        }
 
 def convert_numpy_types(obj):
     """
@@ -50,12 +173,16 @@ def standardize_detection(detection_type: str, detection_data: Dict[str, Any]) -
     {detection, category, severity, risks, confidence}
     """
     if detection_type == "water_leak":
+        confidence_score = detection_data.get("confidence_score")
+        confidence_percent = 85
+        if isinstance(confidence_score, (int, float)):
+            confidence_percent = min(max(int(round(float(confidence_score) * 100)), 0), 100)
         return {
             "detection": detection_data.get("issue", "Water Leak Detected"),
             "category": "Plumbing",
             "severity": detection_data.get("severity", "Medium").title(),
             "risks": "Water damage, mold growth, structural damage, slip hazard",
-            "confidence": 85  # Water is very specific
+            "confidence": confidence_percent
         }
     
     elif detection_type == "waste":
@@ -249,7 +376,12 @@ async def analyze_image(
         all_detections = {}
         
         # ====== DETECTOR 1: WATER LEAK ======
-        water_result, water_mask = process_water_frame(frame)
+        # Primary path: standalone SAM + XGBoost model from `water model/app.py`.
+        # Fallback path: existing leak pipeline for resilience.
+        water_result, should_fallback, water_model_meta = run_water_model(frame)
+        water_mask = None
+        if should_fallback:
+            water_result, water_mask = process_water_frame(frame)
         all_detections["water_leak"] = water_result
         
         # ====== DETECTOR 2: WASTE / CLUTTER ======
@@ -335,6 +467,10 @@ async def analyze_image(
                 "status": "SUCCESS",
                 "verified_detections": verified_results,
                 "raw_detections": all_detections,
+                "water_model": {
+                    **water_model_meta,
+                    "fallback_used": should_fallback
+                },
                 "detection_summary": {
                     "water_detected": bool(all_detections.get("water_leak") is not None),
                     "waste_detected": bool(all_detections.get("waste") is not None),
