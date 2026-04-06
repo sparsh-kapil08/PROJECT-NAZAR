@@ -1,6 +1,6 @@
 {
-  "buildCommand": "npm ci && npm run build",
-  "installCommand": "npm ci",
+  "installCommand": "npm ci --include=dev",
+  "buildCommand": "npm run build",
   "framework": "vite",
   "env": {
     "npm_config_build_from_source": "false"
