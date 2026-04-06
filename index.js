@@ -353,6 +353,8 @@ async function analyzeImage(base64Data) {
     if (mlResponse.ok) {
       const mlResult = await mlResponse.json();
       console.log("ML Engine result:", mlResult);
+
+      const modelOutputs = Array.isArray(mlResult.model_outputs) ? mlResult.model_outputs : [];
       
       // Transform ML model response to match ticket schema
       // ML API returns: { detection, category, severity, risks, confidence }
@@ -361,10 +363,17 @@ async function analyzeImage(base64Data) {
         category: mlResult.category || 'General',
         severityLevel: mlResult.severity || 'Low',
         possibleRisks: mlResult.risks || 'No known risks',
-        confidenceLevel: mlResult.confidence || 0
+        confidenceLevel: mlResult.confidence || 0,
+        modelOutputs
       };
 
       console.log('[ML Analysis] Transformed ticket object:', ticket);
+
+      // Capture water model information for display
+      if (mlResult.water_model_info) {
+        ticket.waterModelInfo = mlResult.water_model_info;
+        console.log('[ML Analysis] Water Model Info:', mlResult.water_model_info);
+      }
 
       // Check for person detection and authorization
       if (mlResult.detection?.toLowerCase().includes('person') && state.authorizedTimes.length > 0) {
@@ -391,7 +400,8 @@ async function analyzeImage(base64Data) {
       category: 'General',
       severityLevel: 'Low',
       possibleRisks: 'Unable to analyze',
-      confidenceLevel: 0
+      confidenceLevel: 0,
+      modelOutputs: []
     };
   }
 
@@ -568,7 +578,46 @@ function getSeverityStyles(level) {
 function renderReportCard(report, isDispatched = false) {
   const styles = getSeverityStyles(report.severityLevel);
   const confidence = report.confidenceLevel || 0;
+  const modelOutputs = Array.isArray(report.modelOutputs) ? report.modelOutputs : [];
+
+  const modelOutputMarkup = modelOutputs.length > 0 ? `
+    <div class="mt-5 rounded-2xl border border-gray-100 bg-white/70 p-4">
+      <p class="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-3">Model Outputs</p>
+      <div class="grid gap-3 md:grid-cols-2">
+        ${modelOutputs.map(output => {
+          const detected = output.detected ? 'Detected' : 'No Issue';
+          const badgeClass = output.detected ? 'bg-red-50 text-red-700' : 'bg-gray-50 text-gray-500';
+          return `
+            <div class="rounded-xl border border-gray-100 bg-white p-3">
+              <div class="flex items-center justify-between gap-3 mb-2">
+                <span class="text-[10px] font-black uppercase tracking-widest text-gray-400">${output.model || 'model'}</span>
+                <span class="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full ${badgeClass}">${detected}</span>
+              </div>
+              <p class="text-sm font-bold text-gray-900 leading-snug">${output.detection || 'No Issue'}</p>
+              <p class="text-[10px] font-semibold text-gray-500 mt-1 uppercase tracking-wider">${output.category || 'General'} · ${output.severity || 'Low'} · ${output.confidence || 0}%</p>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  ` : '';
   
+    const waterModelMarkup = report.waterModelInfo ? `
+      <div class="mt-4 rounded-xl border border-blue-100 bg-blue-50/50 p-3">
+        <p class="text-[9px] font-black text-blue-700 uppercase tracking-widest mb-2">
+          <i class="fa-solid fa-water mr-1.5"></i> Water Model Status
+        </p>
+        <div class="flex items-center justify-between">
+          <div>
+            <p class="text-[10px] font-bold text-gray-900">Model: ${report.waterModelInfo.model_used === 'sam_xgboost' ? '🧠 SAM + XGBoost (NEW)' : '⚠️ Legacy Fallback'}</p>
+            <p class="text-[9px] text-gray-600 mt-1">${report.waterModelInfo.detail || 'Model executed successfully'}</p>
+          </div>
+          <span class="text-[11px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg ${report.waterModelInfo.model_used === 'sam_xgboost' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}">
+            ${report.waterModelInfo.model_used === 'sam_xgboost' ? 'Active' : 'Fallback'}
+          </span>
+        </div>
+      </div>
+    ` : '';
   return `
     <div class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden animate-fade-in group hover:shadow-xl hover:shadow-gray-200/40 transition-all duration-500">
       <div class="md:flex h-full">
@@ -622,6 +671,9 @@ function renderReportCard(report, isDispatched = false) {
               <p class="text-[9px] font-black ${styles.text} uppercase tracking-widest mb-2">Inspector Diagnosis</p>
               <p class="text-sm text-gray-700 font-semibold leading-relaxed">${report.reasonForSeverity}</p>
             </div>
+
+            ${waterModelMarkup}
+            ${modelOutputMarkup}
           </div>
 
           <div class="pt-6 mt-4 border-t border-gray-50 flex items-center justify-between">
@@ -1050,9 +1102,18 @@ document.getElementById('capture-btn').addEventListener('click', async () => {
       severityLevel: result.severityLevel,
       confidenceLevel: result.confidenceLevel,
       reasonForSeverity: '',
-      suggestedDepartment: 'Maintenance'
+      suggestedDepartment: 'Maintenance',
+      modelOutputs: result.modelOutputs || []
     };
     
+          // Add water model info if available
+          if (result.waterModelInfo) {
+            report.waterModelInfo = result.waterModelInfo;
+          }
+        // Add water model info if available
+        if (result.waterModelInfo) {
+          report.waterModelInfo = result.waterModelInfo;
+        }
     state.reports.unshift(report);
     resultContainer.innerHTML = `
       <div class="mt-8">
@@ -1126,7 +1187,8 @@ document.getElementById('file-input').addEventListener('change', (e) => {
         severityLevel: result.severityLevel,
         confidenceLevel: result.confidenceLevel,
         reasonForSeverity: '',
-        suggestedDepartment: 'Maintenance'
+        suggestedDepartment: 'Maintenance',
+        modelOutputs: result.modelOutputs || []
       };
 
       state.reports.unshift(report);

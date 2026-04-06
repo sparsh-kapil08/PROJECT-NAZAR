@@ -57,7 +57,7 @@ def _load_water_model_predict_fn():
         raise RuntimeError(_WATER_MODEL_LOAD_ERROR)
 
     repo_root = Path(__file__).resolve().parents[2]
-    water_model_dir = repo_root / "water model"
+    water_model_dir = repo_root / "water_model"
     water_model_file = water_model_dir / "app.py"
 
     if not water_model_file.exists():
@@ -97,30 +97,40 @@ def run_water_model(frame_bgr: np.ndarray) -> Tuple[Optional[Dict[str, Any]], bo
     try:
         predict_fn = _load_water_model_predict_fn()
     except Exception as exc:
+        print(f"[WATER MODEL] ⚠️  Failed to load new water model: {exc}")
         return None, True, {
             "water_model_status": "unavailable",
             "water_model_error": str(exc),
+            "model_used": "legacy_fallback",
+            "reason": "New water model not available"
         }
 
     try:
         frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         image_pil = Image.fromarray(frame_rgb)
-
+        print(f"[WATER MODEL] 🔍 Running new SAM+XGBoost model...")
         result = predict_fn(image_pil)
+        print(f"[WATER MODEL] ✓ Model completed. Result: {result}")
         if not isinstance(result, dict):
             return None, False, {
                 "water_model_status": "invalid_output",
                 "raw_result_type": str(type(result)),
+                "model_used": "sam_xgboost",
+                "prediction_made": result
             }
 
         label = result.get("prediction")
         confidence = float(result.get("confidence", 0.0) or 0.0)
+        print(f"[WATER MODEL] Prediction: {label}, Confidence: {confidence:.4f}")
 
         if label != "water_spill":
+            print(f"[WATER MODEL] ✓ No water spill detected (confidence: {confidence:.1%})")
             return None, False, {
                 "water_model_status": "clear",
                 "prediction": label,
                 "confidence_score": confidence,
+                "model_used": "sam_xgboost",
+                "interpretation": "Scene is clear - no water spill detected"
             }
 
         if confidence >= 0.85:
@@ -130,6 +140,7 @@ def run_water_model(frame_bgr: np.ndarray) -> Tuple[Optional[Dict[str, Any]], bo
         else:
             severity = "LOW"
 
+        print(f"[WATER MODEL] 🚨 WATER SPILL DETECTED! Severity: {severity}, Confidence: {confidence:.1%}")
         return {
             "issue": "WATER LEAK / SPILL",
             "severity": severity,
@@ -138,12 +149,17 @@ def run_water_model(frame_bgr: np.ndarray) -> Tuple[Optional[Dict[str, Any]], bo
             "confidence_score": confidence,
         }, False, {
             "water_model_status": "detected",
+            "model_used": "sam_xgboost",
+            "severity": severity,
             "prediction": label,
             "confidence_score": confidence,
         }
     except Exception as exc:
+        print(f"[WATER MODEL] ❌ Runtime error: {exc}")
         return None, True, {
             "water_model_status": "runtime_error",
+            "model_used": "legacy_fallback",
+            "reason": "New model error - using fallback",
             "water_model_error": str(exc),
         }
 
@@ -341,6 +357,143 @@ def resolve_conflicts(detections: Dict[str, Any]) -> Dict[str, Any]:
     
     return standardized
 
+
+def build_model_outputs(detections: Dict[str, Any], water_model_meta: Optional[Dict[str, Any]] = None) -> list:
+    """
+    Build a per-model view of the analysis results.
+
+    This is meant for the UI, while the unified top-level result remains
+    the ticket payload used by the existing database flow.
+    """
+    model_outputs = []
+
+    water_output = detections.get("water_leak")
+    water_meta = water_model_meta or {}
+    if water_output:
+        water_detail = standardize_detection("water_leak", water_output)
+        water_detail["detection"] = water_output.get("prediction", water_detail.get("detection", "water_spill"))
+        # Add raw model data to water output
+        water_detail["raw_data"] = {
+            "prediction": water_output.get("prediction"),
+            "model_type": water_output.get("model")
+        }
+        model_outputs.append({
+            "model": "water_leak (SAM + XGBoost)",
+            "detected": True,
+            **water_detail
+        })
+    else:
+        prediction = water_meta.get("prediction", "no_prediction")
+        confidence_score = water_meta.get("confidence_score", 0.0)
+        try:
+            confidence_percent = min(max(int(round(float(confidence_score) * 100)), 0), 100)
+        except (TypeError, ValueError):
+            confidence_percent = 0
+
+        model_outputs.append({
+            "model": "water_leak (SAM + XGBoost)",
+            "detected": False,
+            "detection": prediction,
+            "category": "Plumbing",
+            "severity": "Low",
+            "risks": "No water damage detected",
+            "confidence": confidence_percent,
+            "raw_data": {
+                "prediction": prediction,
+                "model_type": water_meta.get("model_used", "unknown")
+            }
+        })
+
+    waste_output = detections.get("waste")
+    waste_detected = False
+    if waste_output and isinstance(waste_output, dict):
+        clutter_score = waste_output.get("details", {}).get("clutter_score", 0)
+        waste_detected = clutter_score > 25
+
+    if waste_detected:
+        model_outputs.append({
+            "model": "waste_monitor",
+            "detected": True,
+            **standardize_detection("waste", waste_output)
+        })
+    else:
+        model_outputs.append({
+            "model": "waste_monitor",
+            "detected": False,
+            "detection": "Clear - No Waste/Clutter Detected",
+            "category": "Cleanliness",
+            "severity": "Low",
+            "risks": "No clutter hazards detected",
+            "confidence": 90  # High confidence in "no clutter" when model says clear
+        })
+
+    person_output = detections.get("unauthorized_access")
+    if person_output:
+        model_outputs.append({
+            "model": "person_detector",
+            "detected": True,
+            **standardize_detection("unauthorized_access", person_output)
+        })
+    else:
+        model_outputs.append({
+            "model": "person_detector",
+            "detected": False,
+            "detection": "Clear - No Person Detected",
+            "category": "Safety",
+            "severity": "Low",
+            "risks": "No security concerns",
+            "confidence": 95  # High confidence in "no person" when model says clear
+        })
+
+    infra_output = detections.get("general_infrastructure")
+    if infra_output and isinstance(infra_output, dict):
+        if "broken_infrastructure" in infra_output:
+            broken_data = infra_output["broken_infrastructure"]
+            if broken_data.get("details", {}).get("total_damage_score", 0) > 0.55:
+                model_outputs.append({
+                    "model": "infrastructure_detector",
+                    "detected": True,
+                    **standardize_detection("broken_infrastructure", broken_data)
+                })
+            else:
+                model_outputs.append({
+                    "model": "infrastructure_detector",
+                    "detected": False,
+                    "detection": "Clear - Infrastructure Intact",
+                    "category": "Infrastructure",
+                    "severity": "Low",
+                    "risks": "No infrastructure damage detected",
+                    "confidence": 85
+                })
+        elif "energy_waste" in infra_output:
+            model_outputs.append({
+                "model": "infrastructure_detector",
+                "detected": True,
+                **standardize_detection("energy_waste", infra_output["energy_waste"])
+            })
+        else:
+            model_outputs.append({
+                "model": "infrastructure_detector",
+                "detected": False,
+                "detection": "Clear - No Issues Detected",
+                "category": "Infrastructure",
+                "severity": "Low",
+                "risks": "No infrastructure concerns",
+                "confidence": 80
+            })
+    else:
+        model_outputs.append({
+            "model": "infrastructure_detector",
+            "detected": False,
+            "detection": "Clear - No Issues Detected",
+            "category": "Infrastructure",
+            "severity": "Low",
+            "risks": "No infrastructure concerns",
+            "confidence": 80
+        })
+
+    return model_outputs
+
 @app.post("/ML_analyze")
 async def analyze_image(
     file: UploadFile = File(...),
@@ -440,16 +593,26 @@ async def analyze_image(
         verified_results = convert_numpy_types(verified_results)
         all_detections = convert_numpy_types(all_detections)
         
-        # If no issues found, return standardized "No Issue" response
+        model_outputs = build_model_outputs(all_detections, water_model_meta)
+        model_outputs = convert_numpy_types(model_outputs)
+
+        # If no issues found, still return the model outputs and water model metadata
         if not verified_results or all(v is None for v in verified_results.values()):
             return {
                 "detection": "No Issue",
                 "category": "General",
                 "severity": "Low",
                 "risks": "No known risks",
-                "confidence": 0
+                "confidence": 0,
+                "model_outputs": model_outputs,
+                "water_model_info": {
+                    "model_used": water_model_meta.get("model_used", "unknown"),
+                    "fallback_used": should_fallback,
+                    "status": water_model_meta.get("water_model_status"),
+                    "detail": water_model_meta.get("reason") or water_model_meta.get("water_model_error") or "Model executed successfully"
+                }
             }
-        
+
         # If debug mode, return both raw and verified
         if debug:
             # Check if infrastructure results exist
@@ -466,6 +629,7 @@ async def analyze_image(
             return {
                 "status": "SUCCESS",
                 "verified_detections": verified_results,
+                "model_outputs": model_outputs,
                 "raw_detections": all_detections,
                 "water_model": {
                     **water_model_meta,
@@ -479,8 +643,16 @@ async def analyze_image(
                     "infrastructure_broken_detected": infrastructure_broken
                 }
             }
-        
-        return verified_results
+
+        response = dict(verified_results)
+        response["model_outputs"] = model_outputs
+        response["water_model_info"] = {
+            "model_used": water_model_meta.get("model_used", "unknown"),
+            "fallback_used": should_fallback,
+            "status": water_model_meta.get("water_model_status"),
+            "detail": water_model_meta.get("reason") or water_model_meta.get("water_model_error") or "Model executed successfully"
+        }
+        return response
 
     except Exception as e:
         traceback.print_exc()
